@@ -7,9 +7,10 @@ import 'dio_client.dart';
 class BangumiApi {
   static final Dio _dio = DioClient().dio;
 
-  static Future<List<dynamic>> search(String keyword) async {
+  // ✨ 修复 1：增加 type 参数，默认 2(番剧)，可传 1(书籍)
+  static Future<List<dynamic>> search(String keyword, {int type = 2}) async {
     try {
-      final response = await _dio.get('https://api.bgm.tv/search/subject/${Uri.encodeComponent(keyword)}?type=2');
+      final response = await _dio.get('https://api.bgm.tv/search/subject/${Uri.encodeComponent(keyword)}?type=$type');
       if (response.statusCode == 200) {
         return response.data['list'] ?? [];
       }
@@ -36,13 +37,11 @@ class BangumiApi {
     List<Map<String, dynamic>> results = [];
 
     try {
-      // ✨ 优化：先尝试获取当年的排行榜，域名统一改为稳定的 bgm.tv
       var response = await _dio.get(
         'https://bgm.tv/anime/browser/airtime/$year?sort=rank',
         options: Options(responseType: ResponseType.bytes),
       );
       
-      // ✨ 优化：复用你的 Python 逻辑，如果当年榜单获取失败，回退到总榜！
       if (response.statusCode != 200) {
         response = await _dio.get(
           'https://bgm.tv/anime/browser?sort=rank',
@@ -120,15 +119,15 @@ class BangumiApi {
     return null; 
   }
 
-  static Future<List<dynamic>> getUserCollectionList(String username, {int type = 3}) async {
+  static Future<List<dynamic>> getUserCollectionList(String username, {int type = 3, int subjectType = 2}) async {
     if (username.isEmpty) return [];
     try {
-      final response = await _dio.get('https://api.bgm.tv/v0/users/$username/collections?subject_type=2&type=$type&limit=100');
+      final response = await _dio.get('https://api.bgm.tv/v0/users/$username/collections?subject_type=$subjectType&type=$type&limit=100');
       if (response.statusCode == 200) {
         return response.data['data'] ?? [];
       }
     } catch (e) {
-      debugPrint('获取追番列表失败: $e');
+      debugPrint('获取追番/书籍列表失败: $e');
     }
     return [];
   }
@@ -154,16 +153,15 @@ class BangumiApi {
     return false;
   }
 
-  // ✨ 终极修复：照搬你 Python 里的 update_ep_progress 逻辑，完美避开 400 错误！
   static Future<bool> updateEpisodeStatus(int subjectId, String token, int epStatus) async {
     if (token.isEmpty) return false;
     try {
       final response = await _dio.post(
-        'https://api.bgm.tv/subject/$subjectId/update/watched_eps', // 使用旧版专用进度接口
-        data: {'watched_eps': epStatus.toString()},                 // 传入 watched_eps
+        'https://api.bgm.tv/subject/$subjectId/update/watched_eps', 
+        data: {'watched_eps': epStatus.toString()},                 
         options: Options(
           headers: {'Authorization': 'Bearer $token'},
-          contentType: Headers.formUrlEncodedContentType,           // ✨ 必须使用表单格式提交！
+          contentType: Headers.formUrlEncodedContentType,           
         ),
       );
       if (response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300) {

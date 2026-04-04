@@ -34,7 +34,7 @@ class _TopToolBarState extends State<TopToolBar> {
               child: TextField(
                 controller: _searchController,
                 decoration: InputDecoration(
-                  hintText: '搜番剧...',
+                  hintText: '搜番剧、书籍',
                   contentPadding: const EdgeInsets.symmetric(horizontal: 12),
                   border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide.none),
                   fillColor: theme.cardColor,

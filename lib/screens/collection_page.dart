@@ -17,6 +17,7 @@ class _CollectionPageState extends State<CollectionPage> {
   bool isLoading = true;
 
   int currentType = 3;
+  int currentSubjectType = 2; 
   String _lastLoadedAcc = ''; 
 
   final Map<int, String> typeMap = {
@@ -52,7 +53,7 @@ class _CollectionPageState extends State<CollectionPage> {
     final username = Provider.of<SettingsProvider>(context, listen: false).bgmAcc;
 
     if (username.isNotEmpty) {
-      final rawResults = await BangumiApi.getUserCollectionList(username, type: currentType);
+      final rawResults = await BangumiApi.getUserCollectionList(username, type: currentType, subjectType: currentSubjectType);
       if (mounted) {
         setState(() {
           collectionList = rawResults.map((e) => Anime.fromJson(e)).toList();
@@ -121,9 +122,24 @@ class _CollectionPageState extends State<CollectionPage> {
       ),
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('我的番剧库', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Microsoft YaHei')),
+          title: const Text('我的二次元库', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Microsoft YaHei')),
           elevation: 1,
           centerTitle: false,
+          actions: [
+            Padding(
+              padding: const EdgeInsets.only(right: 16.0),
+              child: ToggleButtons(
+                constraints: const BoxConstraints(minHeight: 32, minWidth: 60),
+                borderRadius: BorderRadius.circular(8),
+                isSelected: [currentSubjectType == 2, currentSubjectType == 1],
+                onPressed: (index) {
+                  setState(() => currentSubjectType = index == 0 ? 2 : 1);
+                  _loadCollection();
+                },
+                children: const [Text('📺 番剧', style: TextStyle(fontSize: 12)), Text('📚 书籍', style: TextStyle(fontSize: 12))],
+              ),
+            )
+          ],
         ),
         body: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
@@ -136,7 +152,7 @@ class _CollectionPageState extends State<CollectionPage> {
                 children: [
                   Row(
                     children: [
-                      const Text('追番库', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      Text(currentSubjectType == 2 ? '追番库' : '书库', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
                       const Spacer(),
                       Container(
                         height: 32,
@@ -201,17 +217,18 @@ class _CollectionPageState extends State<CollectionPage> {
                                   ),
                                   child: Padding(
                                     padding: const EdgeInsets.all(16.0),
-                                    // ✨ 核心视觉修复：将原来挤在一起的 Row 改为上下结构的 Column
                                     child: Column(
                                       crossAxisAlignment: CrossAxisAlignment.start,
                                       children: [
-                                        // 1. 顶部：番剧名字（解除行数限制，长名字自动换行显示全）
                                         MouseRegion(
                                           cursor: SystemMouseCursors.click,
                                           child: GestureDetector(
                                             onTap: () {
-                                              // 完全保留你原版的详情页跳转逻辑！
-                                              Navigator.push(context, MaterialPageRoute(builder: (context) => DetailPage(animeId: anime.id, initialName: anime.displayName)));
+                                              Navigator.push(context, MaterialPageRoute(builder: (context) => DetailPage(
+                                                animeId: anime.id, 
+                                                initialName: anime.displayName,
+                                                subjectType: currentSubjectType,
+                                              )));
                                             },
                                             child: Text(
                                               anime.displayName,
@@ -219,18 +236,20 @@ class _CollectionPageState extends State<CollectionPage> {
                                                 fontSize: 15, 
                                                 fontWeight: FontWeight.bold, 
                                                 color: Colors.blue.shade500,
-                                                height: 1.4, // 增加行高，多行文字更舒适
+                                                height: 1.4, 
                                               ),
                                             ),
                                           ),
                                         ),
                                         const SizedBox(height: 16),
-                                        // 2. 底部：进度条和按钮（分列左右两侧，绝对不溢出）
                                         Row(
                                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                           children: [
+                                            // ✨ 修复 2：严格区分进度的话术
                                             Text(
-                                              '进度: ${anime.epStatus} / $totalEpStr',
+                                              currentSubjectType == 2 
+                                                  ? '放送进度: ${anime.epStatus} / $totalEpStr 集'
+                                                  : '阅读进度: ${anime.epStatus} / $totalEpStr 话(卷)',
                                               style: const TextStyle(fontSize: 13), 
                                             ),
                                             SizedBox(
@@ -244,7 +263,7 @@ class _CollectionPageState extends State<CollectionPage> {
                                                   disabledBackgroundColor: Colors.grey.shade600, 
                                                   elevation: 0,
                                                 ),
-                                                child: const Text('看完 +1', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, fontFamily: 'Microsoft YaHei')),
+                                                child: Text(currentSubjectType == 2 ? '看集 +1' : '看卷/话 +1', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, fontFamily: 'Microsoft YaHei')),
                                               ),
                                             ),
                                           ],

@@ -7,11 +7,13 @@ import 'magnet_config_page.dart';
 class DetailPage extends StatefulWidget {
   final int animeId;
   final String initialName;
+  final int subjectType; 
 
   const DetailPage({
     super.key,
     required this.animeId,
     required this.initialName,
+    this.subjectType = 2, 
   });
 
   @override
@@ -145,7 +147,7 @@ class _DetailPageState extends State<DetailPage> {
       ),
       child: Scaffold(
         appBar: AppBar(
-          title: const Text('番剧详情与评价', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Microsoft YaHei')),
+          title: Text(widget.subjectType == 2 ? '番剧详情与评价' : '书籍详情与评价', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Microsoft YaHei')),
           elevation: 1,
           centerTitle: true,
         ),
@@ -169,7 +171,6 @@ class _DetailPageState extends State<DetailPage> {
                         padding: const EdgeInsets.all(16.0),
                         child: Column(
                           children: [
-                            // ✨ 核心视觉修复 1：使用 Wrap 让评分和首播时间在小屏幕上自动折行
                             Wrap(
                               crossAxisAlignment: WrapCrossAlignment.center,
                               spacing: 12,
@@ -189,7 +190,7 @@ class _DetailPageState extends State<DetailPage> {
                                   children: [
                                     const Icon(Icons.calendar_month, color: Colors.brown, size: 20),
                                     const SizedBox(width: 4),
-                                    Text('首播: ${detailData?['date'] ?? '未知'}', style: const TextStyle(fontSize: 14)),
+                                    Text('首播/出版: ${detailData?['date'] ?? '未知'}', style: const TextStyle(fontSize: 14)),
                                   ],
                                 ),
                               ],
@@ -198,11 +199,16 @@ class _DetailPageState extends State<DetailPage> {
                             Row(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Icon(Icons.tv, color: Colors.grey, size: 20),
+                                Icon(widget.subjectType == 2 ? Icons.tv : Icons.book, color: Colors.grey, size: 20),
                                 const SizedBox(width: 4),
-                                // ✨ 核心视觉修复 2：给长文字加上 Expanded 防止被挤爆
+                                // ✨ 修复 2：严格区分进度的话术
                                 Expanded(
-                                  child: Text('全网放送进度: 已播 ${detailData?['eps'] ?? '?'} 集', style: const TextStyle(fontSize: 14)),
+                                  child: Text(
+                                    widget.subjectType == 2 
+                                        ? '全网放送进度: 已出 ${detailData?['eps'] ?? '?'} 集'
+                                        : '全网出版进度: 已出 ${detailData?['eps'] ?? '?'} 卷/话', 
+                                    style: const TextStyle(fontSize: 14)
+                                  ),
                                 ),
                               ],
                             ),
@@ -353,7 +359,6 @@ class _DetailPageState extends State<DetailPage> {
                                 children: [
                                   Row(
                                     children: [
-                                      // ✨ 核心视觉修复 3：给作者名字加 Expanded，防止长名字顶飞评分
                                       Expanded(
                                         child: Text(comment['author']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
                                       ),
@@ -374,7 +379,7 @@ class _DetailPageState extends State<DetailPage> {
                 ),
               ),
         floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
-        floatingActionButton: Padding(
+        floatingActionButton: widget.subjectType == 1 ? null : Padding(
           padding: const EdgeInsets.all(16.0),
           child: SizedBox(
             width: double.infinity,

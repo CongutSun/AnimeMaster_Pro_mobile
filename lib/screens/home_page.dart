@@ -19,7 +19,9 @@ class HomePage extends StatefulWidget {
 class _HomePageState extends State<HomePage> {
   List<Anime> todayAnime = [];
   List<Anime> topAnime = [];
+  List<dynamic> fullCalendar = []; 
   bool isLoading = true;
+  bool showTodayOnly = true;       
   String todayString = '';
 
   @override
@@ -83,11 +85,36 @@ class _HomePageState extends State<HomePage> {
 
     if (mounted) {
       setState(() {
+        fullCalendar = calendar; 
         todayAnime = parsedToday;
         topAnime = parsedTop;
         isLoading = false;
       });
     }
+  }
+
+  // ✨ 优化：使用统一且简易的 📺 电视图标代表放送，去掉了容易引起误解的日历图标
+  Widget _buildWeekSchedule() {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: fullCalendar.map((day) {
+        final weekdayName = day['weekday']['cn'] ?? day['weekday']['en'];
+        final items = day['items'] as List<dynamic>? ?? [];
+        final dayAnime = items.map((e) => Anime.fromJson(e as Map<String, dynamic>)).toList();
+        
+        return Padding(
+          padding: const EdgeInsets.only(bottom: 24.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text('📺 $weekdayName', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue)),
+              const SizedBox(height: 8),
+              AnimeGrid(animeList: dayAnime, isTop: false),
+            ],
+          ),
+        );
+      }).toList(),
+    );
   }
 
   @override
@@ -107,7 +134,6 @@ class _HomePageState extends State<HomePage> {
                 image: DecorationImage(
                   image: FileImage(File(bgPath)),
                   fit: BoxFit.cover,
-                  // ✨ 修复：使用官方最新推荐的 withValues(alpha: 0.5) 替代 withOpacity
                   colorFilter: isDarkMode
                       ? ColorFilter.mode(Colors.black.withValues(alpha: 0.5), BlendMode.darken)
                       : ColorFilter.mode(Colors.white.withValues(alpha: 0.5), BlendMode.lighten),
@@ -130,11 +156,25 @@ class _HomePageState extends State<HomePage> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 12.0),
-                                child: Text('📺 $todayString · 今日新番放送', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                children: [
+                                  Text(
+                                    showTodayOnly ? '📺 $todayString · 今日放送' : '📺 本周新番放送', 
+                                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)
+                                  ),
+                                  TextButton.icon(
+                                    onPressed: () => setState(() => showTodayOnly = !showTodayOnly),
+                                    icon: Icon(showTodayOnly ? Icons.calendar_view_week : Icons.today),
+                                    label: Text(showTodayOnly ? '看本周' : '看今日'),
+                                  )
+                                ],
                               ),
-                              AnimeGrid(animeList: todayAnime, isTop: false),
+                              const SizedBox(height: 12),
+                              
+                              showTodayOnly 
+                                ? AnimeGrid(animeList: todayAnime, isTop: false)
+                                : _buildWeekSchedule(),
                               
                               const SizedBox(height: 32),
                               
