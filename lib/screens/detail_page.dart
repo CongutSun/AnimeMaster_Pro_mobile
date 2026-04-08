@@ -30,6 +30,10 @@ class _DetailPageState extends State<DetailPage> {
 
   String currentStatus = '未收藏';
   String currentRate = '暂不打分';
+  
+  int currentEp = 0;  // 话/章/集
+  int currentVol = 0; // 卷/册 (仅书籍有效)
+
   final TextEditingController commentController = TextEditingController();
 
   final Map<String, int> statusToInt = {'想看': 1, '看过': 2, '在看': 3, '搁置': 4, '抛弃': 5};
@@ -80,6 +84,9 @@ class _DetailPageState extends State<DetailPage> {
         if (commentStr.isNotEmpty) {
           commentController.text = commentStr;
         }
+        
+        currentEp = collectionData['ep_status'] ?? 0;
+        currentVol = collectionData['vol_status'] ?? 0;
       }
     }
 
@@ -108,6 +115,8 @@ class _DetailPageState extends State<DetailPage> {
 
     Map<String, dynamic> postData = {
       'type': statusToInt[currentStatus],
+      'ep_status': currentEp,
+      'vol_status': currentVol, 
     };
     
     if (currentRate != '暂不打分') {
@@ -129,6 +138,104 @@ class _DetailPageState extends State<DetailPage> {
     }
   }
 
+  Widget _buildProgressAdjuster({required String title, required int value, required VoidCallback onMinus, required VoidCallback onPlus}) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final primaryIconColor = isDarkMode ? Colors.blue.shade400 : Theme.of(context).primaryColor;
+    final iconColor = isDarkMode ? Colors.green.shade400 : Colors.green;
+    
+    // 禁用状态的颜色区分
+    final minusIconColor = value > 0 
+        ? (isDarkMode ? Colors.grey.shade300 : Colors.grey.shade700)
+        : (isDarkMode ? Colors.grey.shade800 : Colors.grey.shade300);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12.0),
+      child: Row(
+        children: [
+          Icon(widget.subjectType == 1 ? Icons.menu_book : Icons.ondemand_video, color: iconColor, size: 20),
+          const SizedBox(width: 8),
+          Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
+          const Spacer(),
+          IconButton(
+            icon: Icon(Icons.remove_circle_outline, color: minusIconColor),
+            onPressed: value > 0 ? onMinus : null,
+          ),
+          SizedBox(
+            width: 40,
+            child: Text('$value', textAlign: TextAlign.center, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+          ),
+          IconButton(
+            icon: Icon(Icons.add_circle_outline, color: primaryIconColor),
+            onPressed: onPlus,
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showFullScreenCommentEditor() {
+    TextEditingController tempController = TextEditingController(text: commentController.text);
+    
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true, 
+      backgroundColor: Colors.transparent,
+      builder: (context) {
+        return Container(
+          height: MediaQuery.of(context).size.height * 0.85, 
+          decoration: BoxDecoration(
+            color: Theme.of(context).scaffoldBackgroundColor,
+            borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+          ),
+          child: Column(
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    TextButton(
+                      onPressed: () => Navigator.pop(context),
+                      child: const Text('取消', style: TextStyle(color: Colors.grey, fontSize: 16)),
+                    ),
+                    const Text('长评编辑', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                    ElevatedButton(
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, foregroundColor: Colors.white, elevation: 0),
+                      onPressed: () {
+                        setState(() {
+                          commentController.text = tempController.text;
+                        });
+                        Navigator.pop(context);
+                      },
+                      child: const Text('确认保存'),
+                    ),
+                  ],
+                ),
+              ),
+              const Divider(height: 1),
+              Expanded(
+                child: Padding(
+                  padding: const EdgeInsets.all(16.0),
+                  child: TextField(
+                    controller: tempController,
+                    maxLines: null, 
+                    expands: true,  
+                    textAlignVertical: TextAlignVertical.top,
+                    style: const TextStyle(fontSize: 15, height: 1.6),
+                    decoration: const InputDecoration(
+                      hintText: '在这里挥洒你的长篇大论吧...\n(支持自动换行，写完后别忘了点击同步云端哦)',
+                      border: InputBorder.none,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     String originalName = detailData?['name'] ?? widget.initialName;
@@ -137,6 +244,11 @@ class _DetailPageState extends State<DetailPage> {
 
     final provider = Provider.of<SettingsProvider>(context);
     final theme = Theme.of(context); 
+    
+    // ✨ 状态栏图标自适应颜色
+    final isDarkMode = theme.brightness == Brightness.dark;
+    final highlightOrange = isDarkMode ? Colors.orange.shade400 : Colors.orange;
+    final highlightBlue = isDarkMode ? Colors.blue.shade400 : Colors.blue;
 
     return Theme(
       data: theme.copyWith(
@@ -179,7 +291,7 @@ class _DetailPageState extends State<DetailPage> {
                                 Row(
                                   mainAxisSize: MainAxisSize.min,
                                   children: [
-                                    const Icon(Icons.star_outline, color: Colors.orange, size: 20),
+                                    Icon(Icons.star_outline, color: highlightOrange, size: 20),
                                     const SizedBox(width: 4),
                                     Text('官方评分: ${detailData?['rating']?['score'] ?? '0'}', style: const TextStyle(fontSize: 14)),
                                   ],
@@ -201,7 +313,6 @@ class _DetailPageState extends State<DetailPage> {
                               children: [
                                 Icon(widget.subjectType == 2 ? Icons.tv : Icons.book, color: Colors.grey, size: 20),
                                 const SizedBox(width: 4),
-                                // ✨ 修复 2：严格区分进度的话术
                                 Expanded(
                                   child: Text(
                                     widget.subjectType == 2 
@@ -226,7 +337,7 @@ class _DetailPageState extends State<DetailPage> {
                           children: [
                             Row(
                               children: [
-                                const Icon(Icons.rocket_launch, color: Colors.blue, size: 20),
+                                Icon(Icons.rocket_launch, color: highlightBlue, size: 20),
                                 const SizedBox(width: 8),
                                 const Text('更新状态:', style: TextStyle(fontWeight: FontWeight.bold)),
                                 const SizedBox(width: 8),
@@ -254,7 +365,7 @@ class _DetailPageState extends State<DetailPage> {
                             const SizedBox(height: 12),
                             Row(
                               children: [
-                                const Icon(Icons.star, color: Colors.orange, size: 20),
+                                Icon(Icons.star, color: highlightOrange, size: 20),
                                 const SizedBox(width: 8),
                                 const Text('打分:', style: TextStyle(fontWeight: FontWeight.bold)),
                                 const SizedBox(width: 8),
@@ -279,42 +390,81 @@ class _DetailPageState extends State<DetailPage> {
                                 ),
                               ],
                             ),
-                            const SizedBox(height: 12),
-                            Row(
+                            const Padding(
+                              padding: EdgeInsets.symmetric(vertical: 8.0),
+                              child: Divider(),
+                            ),
+                            
+                            if (widget.subjectType == 1) ...[ 
+                              _buildProgressAdjuster(
+                                title: '看到第几卷 (Vol)', 
+                                value: currentVol, 
+                                onMinus: () => setState(() => currentVol--), 
+                                onPlus: () => setState(() => currentVol++)
+                              ),
+                              _buildProgressAdjuster(
+                                title: '看到第几话 (Chap)', 
+                                value: currentEp, 
+                                onMinus: () => setState(() => currentEp--), 
+                                onPlus: () => setState(() => currentEp++)
+                              ),
+                            ] else ...[ 
+                              _buildProgressAdjuster(
+                                title: '看到第几集 (Ep)', 
+                                value: currentEp, 
+                                onMinus: () => setState(() => currentEp--), 
+                                onPlus: () => setState(() => currentEp++)
+                              ),
+                            ],
+
+                            const SizedBox(height: 4),
+
+                            Stack(
                               children: [
-                                Expanded(
-                                  child: SizedBox(
-                                    height: 36,
-                                    child: TextField(
-                                      controller: commentController,
-                                      style: const TextStyle(fontFamily: 'Microsoft YaHei', fontSize: 13),
-                                      decoration: InputDecoration(
-                                        hintText: '写句简短的吐槽或短评吧...',
-                                        hintStyle: const TextStyle(fontSize: 13),
-                                        contentPadding: const EdgeInsets.symmetric(horizontal: 12),
-                                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(4), borderSide: BorderSide(color: theme.dividerColor)),
-                                      ),
-                                    ),
+                                TextField(
+                                  controller: commentController,
+                                  minLines: 3,
+                                  maxLines: 5,
+                                  style: const TextStyle(fontFamily: 'Microsoft YaHei', fontSize: 13, height: 1.5),
+                                  decoration: InputDecoration(
+                                    hintText: '写句短评，或者点击右下角全屏写长评...',
+                                    hintStyle: const TextStyle(fontSize: 13),
+                                    contentPadding: const EdgeInsets.fromLTRB(12, 12, 40, 12), 
+                                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: theme.dividerColor)),
                                   ),
                                 ),
-                                const SizedBox(width: 12),
-                                SizedBox(
-                                  height: 36,
-                                  child: ElevatedButton.icon(
-                                    onPressed: isSyncing ? null : _syncToCloud,
-                                    icon: isSyncing 
-                                        ? const SizedBox(width: 16, height: 16, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
-                                        : const Icon(Icons.save, size: 16),
-                                    label: Text(isSyncing ? '同步中...' : '云端同步', style: const TextStyle(fontFamily: 'Microsoft YaHei')),
-                                    style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade700, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(6))),
+                                Positioned(
+                                  right: 4,
+                                  bottom: 4,
+                                  child: IconButton(
+                                    // ✨ 核心修复：全屏放大按钮在暗黑模式下变亮
+                                    icon: Icon(Icons.fullscreen, color: highlightBlue),
+                                    tooltip: '全屏长评模式',
+                                    onPressed: _showFullScreenCommentEditor,
                                   ),
                                 ),
                               ],
                             ),
+
+                            const SizedBox(height: 16),
+                            
+                            SizedBox(
+                              width: double.infinity,
+                              height: 44,
+                              child: ElevatedButton.icon(
+                                onPressed: isSyncing ? null : _syncToCloud,
+                                icon: isSyncing 
+                                    ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                                    : const Icon(Icons.cloud_upload),
+                                label: Text(isSyncing ? '数据同步中...' : '保存进度并同步云端', style: const TextStyle(fontFamily: 'Microsoft YaHei', fontSize: 15, fontWeight: FontWeight.bold)),
+                                style: ElevatedButton.styleFrom(backgroundColor: Colors.orange.shade700, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                              ),
+                            ),
+                            
                             if (provider.bgmAcc.isNotEmpty && !hasFetchedPersonalData)
                               const Padding(
-                                padding: EdgeInsets.only(top: 8.0),
-                                child: Text('⚠️ 提示：未获取到您的旧评价。如果这不合理，请检查您的 Bgm 账号是否填成了中文昵称 (必须填字母或数字 UID)', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                                padding: EdgeInsets.only(top: 12.0),
+                                child: Text('⚠️ 提示：未获取到您的旧评价。如果这不合理，请检查您的 Bgm 账号是否填成了中文昵称 (必须填 UID)', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
                               ),
                           ],
                         ),
@@ -341,11 +491,11 @@ class _DetailPageState extends State<DetailPage> {
                             padding: const EdgeInsets.symmetric(vertical: 16.0),
                             child: Divider(color: theme.dividerColor),
                           ),
-                          const Row(
+                          Row(
                             children: [
-                              Icon(Icons.chat, color: Colors.blue, size: 20),
-                              SizedBox(width: 8),
-                              Text('网友热评', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue)),
+                              Icon(Icons.chat, color: highlightBlue, size: 20),
+                              const SizedBox(width: 8),
+                              Text('网友热评', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: highlightBlue)),
                             ],
                           ),
                           const SizedBox(height: 12),
@@ -363,7 +513,7 @@ class _DetailPageState extends State<DetailPage> {
                                         child: Text(comment['author']!, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13), maxLines: 1, overflow: TextOverflow.ellipsis),
                                       ),
                                       const SizedBox(width: 8),
-                                      Text(comment['rate']!, style: const TextStyle(color: Colors.orange, fontSize: 12)),
+                                      Text(comment['rate']!, style: TextStyle(color: highlightOrange, fontSize: 12)),
                                     ],
                                   ),
                                   const SizedBox(height: 4),

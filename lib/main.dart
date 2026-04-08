@@ -69,7 +69,6 @@ class MyApp extends StatelessWidget {
             ),
           ),
           
-          // ✨ 核心防御代码：永远强制保持 1.0 的标准缩放比例
           builder: (context, child) {
             return MediaQuery(
               data: MediaQuery.of(context).copyWith(
