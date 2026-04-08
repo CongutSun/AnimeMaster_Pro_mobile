@@ -63,48 +63,21 @@ class _CollectionPageState extends State<CollectionPage> {
     if (mounted) setState(() => isLoading = false);
   }
 
-  Future<void> _addOneEpisode(int index) async {
-    final token = Provider.of<SettingsProvider>(context, listen: false).bgmToken;
+  Future<void> _showUpdateBottomSheet(BuildContext context, Anime anime) async {
+    final result = await showModalBottomSheet<bool>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (ctx) => _UpdateProgressSheet(
+        animeId: anime.id,
+        animeName: anime.displayName,
+        subjectType: currentSubjectType,
+      ),
+    );
 
-    if (token.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('缺少 Token，请先在设置中配置！')));
-      return;
-    }
-
-    final anime = collectionList[index];
-    int currentEp = anime.epStatus;
-    int totalEp = anime.eps;
-
-    if (totalEp > 0 && currentEp >= totalEp) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已经看完啦！')));
-      return;
-    }
-
-    setState(() {
-      collectionList[index] = Anime(
-        id: anime.id,
-        name: anime.name,
-        nameCn: anime.nameCn,
-        imageUrl: anime.imageUrl,
-        score: anime.score,
-        eps: anime.eps,
-        epStatus: currentEp + 1,
-      );
-    });
-
-    bool success = await BangumiApi.updateEpisodeStatus(anime.id, token, currentEp + 1);
-    
-    if (!mounted) return; 
-
-    if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('✅ 《${anime.displayName}》 进度已更新为 ${currentEp + 1}'), duration: const Duration(seconds: 1)),
-      );
-    } else {
-      setState(() {
-        collectionList[index] = anime;
-      });
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('❌ 同步失败，请检查网络！'), backgroundColor: Colors.red));
+    // 如果弹窗返回 true，说明用户成功更新了进度，默默刷新一下列表以显示最新数据
+    if (result == true) {
+      _loadCollection();
     }
   }
 
@@ -245,25 +218,25 @@ class _CollectionPageState extends State<CollectionPage> {
                                         Row(
                                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                           children: [
-                                            // ✨ 修复 2：严格区分进度的话术
                                             Text(
                                               currentSubjectType == 2 
                                                   ? '放送进度: ${anime.epStatus} / $totalEpStr 集'
                                                   : '阅读进度: ${anime.epStatus} / $totalEpStr 话(卷)',
                                               style: const TextStyle(fontSize: 13), 
                                             ),
+                                            // ✨ 换成专业的“快捷更新”按钮
                                             SizedBox(
                                               height: 32,
-                                              child: ElevatedButton(
-                                                onPressed: (anime.eps > 0 && anime.epStatus >= anime.eps) ? null : () => _addOneEpisode(index),
+                                              child: ElevatedButton.icon(
+                                                onPressed: () => _showUpdateBottomSheet(context, anime),
+                                                icon: const Icon(Icons.edit_note, size: 18),
+                                                label: const Text('快捷更新', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, fontFamily: 'Microsoft YaHei')),
                                                 style: ElevatedButton.styleFrom(
                                                   padding: const EdgeInsets.symmetric(horizontal: 16),
                                                   backgroundColor: Colors.orange.shade600,
                                                   foregroundColor: Colors.white,
-                                                  disabledBackgroundColor: Colors.grey.shade600, 
                                                   elevation: 0,
                                                 ),
-                                                child: Text(currentSubjectType == 2 ? '看集 +1' : '看卷/话 +1', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, fontFamily: 'Microsoft YaHei')),
                                               ),
                                             ),
                                           ],
@@ -275,6 +248,193 @@ class _CollectionPageState extends State<CollectionPage> {
                               },
                             ),
             ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _UpdateProgressSheet extends StatefulWidget {
+  final int animeId;
+  final String animeName;
+  final int subjectType;
+
+  const _UpdateProgressSheet({
+    required this.animeId,
+    required this.animeName,
+    required this.subjectType,
+  });
+
+  @override
+  State<_UpdateProgressSheet> createState() => _UpdateProgressSheetState();
+}
+
+class _UpdateProgressSheetState extends State<_UpdateProgressSheet> {
+  bool isLoading = true;
+  bool isSyncing = false;
+  
+  int currentEp = 0;
+  int currentVol = 0;
+  
+  dynamic existingType;
+  dynamic existingRate;
+  dynamic existingComment;
+
+  @override
+  void initState() {
+    super.initState();
+    _fetchCurrentStatus();
+  }
+
+  Future<void> _fetchCurrentStatus() async {
+    final provider = Provider.of<SettingsProvider>(context, listen: false);
+    final collectionData = await BangumiApi.getUserCollection(widget.animeId, provider.bgmAcc, provider.bgmToken);
+    
+    if (mounted) {
+      if (collectionData != null) {
+        setState(() {
+          currentEp = collectionData['ep_status'] ?? 0;
+          currentVol = collectionData['vol_status'] ?? 0;
+          existingType = collectionData['type'];
+          existingRate = collectionData['rate'];
+          existingComment = collectionData['comment'];
+          isLoading = false;
+        });
+      } else {
+        // 如果没拿到，允许从 0 开始
+        setState(() => isLoading = false);
+      }
+    }
+  }
+
+  Future<void> _syncProgress() async {
+    final token = Provider.of<SettingsProvider>(context, listen: false).bgmToken;
+    if (token.isEmpty) return;
+
+    setState(() => isSyncing = true);
+
+    Map<String, dynamic> postData = {
+      'type': existingType ?? 3, // 如果未收藏过，默认标记为“在看(3)”
+      'ep_status': currentEp,
+      'vol_status': currentVol,
+    };
+    if (existingRate != null) postData['rate'] = existingRate;
+    if (existingComment != null && existingComment.toString().isNotEmpty) {
+      postData['comment'] = existingComment;
+    }
+
+    bool success = await BangumiApi.updateCollection(widget.animeId, token, postData);
+
+    if (!mounted) return;
+    
+    setState(() => isSyncing = false);
+
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 进度同步成功！'), backgroundColor: Colors.green));
+      Navigator.pop(context, true); // 返回 true 告知列表页需要刷新
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('❌ 同步失败，请检查网络。'), backgroundColor: Colors.red));
+    }
+  }
+
+  Widget _buildProgressAdjuster({required String title, required int value, required VoidCallback onMinus, required VoidCallback onPlus}) {
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final primaryIconColor = isDarkMode ? Colors.blue.shade400 : Theme.of(context).primaryColor;
+    final iconColor = isDarkMode ? Colors.green.shade400 : Colors.green;
+    
+    final minusIconColor = value > 0 
+        ? (isDarkMode ? Colors.grey.shade300 : Colors.grey.shade700)
+        : (isDarkMode ? Colors.grey.shade800 : Colors.grey.shade300);
+
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 16.0),
+      child: Row(
+        children: [
+          Icon(widget.subjectType == 1 ? Icons.menu_book : Icons.ondemand_video, color: iconColor, size: 22),
+          const SizedBox(width: 8),
+          Text(title, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+          const Spacer(),
+          IconButton(
+            icon: Icon(Icons.remove_circle_outline, color: minusIconColor, size: 28),
+            onPressed: value > 0 ? onMinus : null,
+          ),
+          SizedBox(
+            width: 48,
+            child: Text('$value', textAlign: TextAlign.center, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+          ),
+          IconButton(
+            icon: Icon(Icons.add_circle_outline, color: primaryIconColor, size: 28),
+            onPressed: onPlus,
+          ),
+        ],
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: Theme.of(context).scaffoldBackgroundColor,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+      ),
+      padding: EdgeInsets.only(
+        left: 20, 
+        right: 20, 
+        top: 16, 
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24 // 适配全面屏底部安全区
+      ),
+      child: SafeArea(
+        child: Column(
+          mainAxisSize: MainAxisSize.min, // 弹窗高度自适应内容
+          children: [
+            // 顶部拖拽把手指示器
+            Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(2))),
+            const SizedBox(height: 16),
+            Text('更新进度', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 4),
+            Text(widget.animeName, style: const TextStyle(fontSize: 13, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
+            const SizedBox(height: 24),
+            
+            if (isLoading)
+              const Padding(padding: EdgeInsets.all(32.0), child: CircularProgressIndicator())
+            else ...[
+              if (widget.subjectType == 1) ...[ 
+                _buildProgressAdjuster(
+                  title: '当前卷 (Vol)', 
+                  value: currentVol, 
+                  onMinus: () => setState(() => currentVol--), 
+                  onPlus: () => setState(() => currentVol++)
+                ),
+                _buildProgressAdjuster(
+                  title: '当前话 (Chap)', 
+                  value: currentEp, 
+                  onMinus: () => setState(() => currentEp--), 
+                  onPlus: () => setState(() => currentEp++)
+                ),
+              ] else ...[ 
+                _buildProgressAdjuster(
+                  title: '当前集数 (Ep)', 
+                  value: currentEp, 
+                  onMinus: () => setState(() => currentEp--), 
+                  onPlus: () => setState(() => currentEp++)
+                ),
+              ],
+              const SizedBox(height: 16),
+              SizedBox(
+                width: double.infinity,
+                height: 48,
+                child: ElevatedButton.icon(
+                  onPressed: isSyncing ? null : _syncProgress,
+                  icon: isSyncing 
+                      ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.white, strokeWidth: 2))
+                      : const Icon(Icons.cloud_upload),
+                  label: Text(isSyncing ? '同步中...' : '保存进度', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                  style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, foregroundColor: Colors.white, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12))),
+                ),
+              ),
+            ]
           ],
         ),
       ),
