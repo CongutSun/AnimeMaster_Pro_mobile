@@ -116,8 +116,12 @@ class _DetailPageState extends State<DetailPage> {
     Map<String, dynamic> postData = {
       'type': statusToInt[currentStatus],
       'ep_status': currentEp,
-      'vol_status': currentVol, 
     };
+    
+    // ✨ 核心修复：对于番剧（2），绝不打包 vol_status 参数，避免被服务器 400 拦截
+    if (widget.subjectType == 1) {
+      postData['vol_status'] = currentVol;
+    }
     
     if (currentRate != '暂不打分') {
       postData['rate'] = int.parse(currentRate.replaceAll('分', ''));
@@ -143,7 +147,6 @@ class _DetailPageState extends State<DetailPage> {
     final primaryIconColor = isDarkMode ? Colors.blue.shade400 : Theme.of(context).primaryColor;
     final iconColor = isDarkMode ? Colors.green.shade400 : Colors.green;
     
-    // 禁用状态的颜色区分
     final minusIconColor = value > 0 
         ? (isDarkMode ? Colors.grey.shade300 : Colors.grey.shade700)
         : (isDarkMode ? Colors.grey.shade800 : Colors.grey.shade300);
@@ -245,7 +248,6 @@ class _DetailPageState extends State<DetailPage> {
     final provider = Provider.of<SettingsProvider>(context);
     final theme = Theme.of(context); 
     
-    // ✨ 状态栏图标自适应颜色
     final isDarkMode = theme.brightness == Brightness.dark;
     final highlightOrange = isDarkMode ? Colors.orange.shade400 : Colors.orange;
     final highlightBlue = isDarkMode ? Colors.blue.shade400 : Colors.blue;
@@ -437,7 +439,6 @@ class _DetailPageState extends State<DetailPage> {
                                   right: 4,
                                   bottom: 4,
                                   child: IconButton(
-                                    // ✨ 核心修复：全屏放大按钮在暗黑模式下变亮
                                     icon: Icon(Icons.fullscreen, color: highlightBlue),
                                     tooltip: '全屏长评模式',
                                     onPressed: _showFullScreenCommentEditor,

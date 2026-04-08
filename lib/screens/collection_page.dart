@@ -63,6 +63,53 @@ class _CollectionPageState extends State<CollectionPage> {
     if (mounted) setState(() => isLoading = false);
   }
 
+  // ✨ 核心修复：番剧专属的直通更新（结合了你原本创建新实例来规避 final 报错的优秀写法）
+  Future<void> _directAddEp(int index) async {
+    final token = Provider.of<SettingsProvider>(context, listen: false).bgmToken;
+
+    if (token.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('缺少 Token，请先在设置中配置！')));
+      return;
+    }
+
+    final anime = collectionList[index];
+    int currentEp = anime.epStatus;
+    int totalEp = anime.eps;
+
+    if (totalEp > 0 && currentEp >= totalEp) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('已经看完啦！')));
+      return;
+    }
+
+    setState(() {
+      collectionList[index] = Anime(
+        id: anime.id,
+        name: anime.name,
+        nameCn: anime.nameCn,
+        imageUrl: anime.imageUrl,
+        score: anime.score,
+        eps: anime.eps,
+        epStatus: currentEp + 1,
+      );
+    });
+
+    bool success = await BangumiApi.updateEpisodeStatus(anime.id, token, currentEp + 1);
+    
+    if (!mounted) return; 
+
+    if (success) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('✅ 《${anime.displayName}》 进度已更新为 ${currentEp + 1}'), duration: const Duration(seconds: 1)),
+      );
+    } else {
+      // 失败回滚：把旧的数据还原回去
+      setState(() {
+        collectionList[index] = anime;
+      });
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('❌ 同步失败，请检查网络！'), backgroundColor: Colors.red));
+    }
+  }
+
   Future<void> _showUpdateBottomSheet(BuildContext context, Anime anime) async {
     final result = await showModalBottomSheet<bool>(
       context: context,
@@ -75,7 +122,6 @@ class _CollectionPageState extends State<CollectionPage> {
       ),
     );
 
-    // 如果弹窗返回 true，说明用户成功更新了进度，默默刷新一下列表以显示最新数据
     if (result == true) {
       _loadCollection();
     }
@@ -224,21 +270,40 @@ class _CollectionPageState extends State<CollectionPage> {
                                                   : '阅读进度: ${anime.epStatus} / $totalEpStr 话(卷)',
                                               style: const TextStyle(fontSize: 13), 
                                             ),
-                                            // ✨ 换成专业的“快捷更新”按钮
-                                            SizedBox(
-                                              height: 32,
-                                              child: ElevatedButton.icon(
-                                                onPressed: () => _showUpdateBottomSheet(context, anime),
-                                                icon: const Icon(Icons.edit_note, size: 18),
-                                                label: const Text('快捷更新', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, fontFamily: 'Microsoft YaHei')),
-                                                style: ElevatedButton.styleFrom(
-                                                  padding: const EdgeInsets.symmetric(horizontal: 16),
-                                                  backgroundColor: Colors.orange.shade600,
-                                                  foregroundColor: Colors.white,
-                                                  elevation: 0,
+                                            
+                                            // ✨ UI 判断：书籍弹出弹窗，番剧直通+1
+                                            if (currentSubjectType == 1) ...[
+                                              SizedBox(
+                                                height: 32,
+                                                child: ElevatedButton.icon(
+                                                  onPressed: () => _showUpdateBottomSheet(context, anime),
+                                                  icon: const Icon(Icons.edit_note, size: 18),
+                                                  label: const Text('快捷更新', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, fontFamily: 'Microsoft YaHei')),
+                                                  style: ElevatedButton.styleFrom(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                                    backgroundColor: Colors.orange.shade600,
+                                                    foregroundColor: Colors.white,
+                                                    elevation: 0,
+                                                  ),
                                                 ),
                                               ),
-                                            ),
+                                            ] else if (currentSubjectType == 2 && currentType == 3) ...[
+                                              SizedBox(
+                                                height: 32,
+                                                child: ElevatedButton.icon(
+                                                  onPressed: (anime.eps > 0 && anime.epStatus >= anime.eps) ? null : () => _directAddEp(index),
+                                                  icon: const Icon(Icons.add, size: 18),
+                                                  label: const Text('看完 +1', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, fontFamily: 'Microsoft YaHei')),
+                                                  style: ElevatedButton.styleFrom(
+                                                    padding: const EdgeInsets.symmetric(horizontal: 16),
+                                                    backgroundColor: Colors.blue.shade600,
+                                                    foregroundColor: Colors.white,
+                                                    disabledBackgroundColor: Colors.grey.shade600,
+                                                    elevation: 0,
+                                                  ),
+                                                ),
+                                              ),
+                                            ]
                                           ],
                                         ),
                                       ],
@@ -302,7 +367,6 @@ class _UpdateProgressSheetState extends State<_UpdateProgressSheet> {
           isLoading = false;
         });
       } else {
-        // 如果没拿到，允许从 0 开始
         setState(() => isLoading = false);
       }
     }
@@ -315,10 +379,13 @@ class _UpdateProgressSheetState extends State<_UpdateProgressSheet> {
     setState(() => isSyncing = true);
 
     Map<String, dynamic> postData = {
-      'type': existingType ?? 3, // 如果未收藏过，默认标记为“在看(3)”
+      'type': existingType ?? 3, 
       'ep_status': currentEp,
-      'vol_status': currentVol,
     };
+    // 严格确保只有书籍才发送卷参数
+    if (widget.subjectType == 1) {
+      postData['vol_status'] = currentVol;
+    }
     if (existingRate != null) postData['rate'] = existingRate;
     if (existingComment != null && existingComment.toString().isNotEmpty) {
       postData['comment'] = existingComment;
@@ -332,7 +399,7 @@ class _UpdateProgressSheetState extends State<_UpdateProgressSheet> {
 
     if (success) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 进度同步成功！'), backgroundColor: Colors.green));
-      Navigator.pop(context, true); // 返回 true 告知列表页需要刷新
+      Navigator.pop(context, true); 
     } else {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('❌ 同步失败，请检查网络。'), backgroundColor: Colors.red));
     }
@@ -383,16 +450,15 @@ class _UpdateProgressSheetState extends State<_UpdateProgressSheet> {
         left: 20, 
         right: 20, 
         top: 16, 
-        bottom: MediaQuery.of(context).viewInsets.bottom + 24 // 适配全面屏底部安全区
+        bottom: MediaQuery.of(context).viewInsets.bottom + 24 
       ),
       child: SafeArea(
         child: Column(
-          mainAxisSize: MainAxisSize.min, // 弹窗高度自适应内容
+          mainAxisSize: MainAxisSize.min, 
           children: [
-            // 顶部拖拽把手指示器
             Container(width: 40, height: 4, decoration: BoxDecoration(color: Colors.grey.shade400, borderRadius: BorderRadius.circular(2))),
             const SizedBox(height: 16),
-            Text('更新进度', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            const Text('更新进度', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 4),
             Text(widget.animeName, style: const TextStyle(fontSize: 13, color: Colors.grey), maxLines: 1, overflow: TextOverflow.ellipsis),
             const SizedBox(height: 24),
