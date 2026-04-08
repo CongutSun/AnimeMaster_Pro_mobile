@@ -17,47 +17,59 @@ class HomePage extends StatefulWidget {
 }
 
 class _HomePageState extends State<HomePage> {
-  static const String _cacheCalendarKey = 'cache_calendar';
-  static const String _cacheTopKey = 'cache_top';
-
   List<Anime> todayAnime = [];
   List<Anime> topAnime = [];
   List<dynamic> fullCalendar = []; 
   bool isLoading = true;
   bool showTodayOnly = true;       
   String todayString = '';
-  
-  String? errorMessage;
 
   @override
   void initState() {
     super.initState();
+    // 默认正常加载
     _loadData();
   }
 
-  Future<void> _loadData() async {
-    if (mounted) {
-      setState(() {
-        isLoading = true;
-        errorMessage = null; 
-      });
-    }
-
+  // ✨ 核心升级：增加 forceRefresh 参数，用于判断是否是用户手动下拉刷新
+  Future<void> _loadData({bool forceRefresh = false}) async {
     final prefs = await SharedPreferences.getInstance();
     
-    final cachedCalendar = prefs.getString(_cacheCalendarKey);
-    final cachedTop = prefs.getString(_cacheTopKey);
+    final cachedCalendar = prefs.getString('cache_calendar');
+    final cachedTop = prefs.getString('cache_top');
+    // ✨ 读取上次缓存的时间
+    final cacheTimeStr = prefs.getString('cache_time');
 
-    if (cachedCalendar != null && cachedTop != null) {
+    bool hasValidCache = false;
+
+    // 1. 如果有缓存，并且不是用户手动强制刷新，我们来检查缓存是否过期
+    if (cachedCalendar != null && cachedTop != null && cacheTimeStr != null && !forceRefresh) {
       try {
-        final calendar = jsonDecode(cachedCalendar);
-        final rawTopData = jsonDecode(cachedTop) as List<dynamic>;
-        _parseAndSetData(calendar, rawTopData.map((e) => e as Map<String, dynamic>).toList());
+        final cacheTime = DateTime.parse(cacheTimeStr);
+        final now = DateTime.now();
+        
+        // ✨ 商业化策略：缓存 4 小时内有效。你可以根据需要调整这个时间
+        if (now.difference(cacheTime).inHours < 4) {
+          final calendar = jsonDecode(cachedCalendar);
+          final rawTopData = jsonDecode(cachedTop) as List<dynamic>;
+          
+          _parseAndSetData(calendar, rawTopData.map((e) => e as Map<String, dynamic>).toList());
+          hasValidCache = true; // 标记缓存有效
+        }
       } catch (e) {
-        debugPrint('缓存解析失败: $e');
+        debugPrint('缓存解析或时间校验失败: $e');
       }
+    } 
+    
+    // 如果没有有效缓存，才需要显示转圈 Loading
+    if (!hasValidCache) {
+      setState(() => isLoading = true);
+    } else {
+      // ✨ 如果缓存有效，直接 Return 终止函数！绝不偷偷发起多余的网络请求，界面绝对不会闪烁！
+      return;
     }
 
+    // 2. 只有在【无缓存】、【缓存过期】或【用户手动下拉】时，才走网络请求
     try {
       final results = await Future.wait([
         BangumiApi.getCalendar(),
@@ -67,21 +79,21 @@ class _HomePageState extends State<HomePage> {
       final List<dynamic> calendar = results[0];
       final List<Map<String, dynamic>> rawTopData = results[1] as List<Map<String, dynamic>>;
 
+      // 只有接口真的返回了数据，才写入缓存并记录当前时间
       if (calendar.isNotEmpty && rawTopData.isNotEmpty) {
-        prefs.setString(_cacheCalendarKey, jsonEncode(calendar));
-        prefs.setString(_cacheTopKey, jsonEncode(rawTopData));
+        prefs.setString('cache_calendar', jsonEncode(calendar));
+        prefs.setString('cache_top', jsonEncode(rawTopData));
+        prefs.setString('cache_time', DateTime.now().toIso8601String()); // ✨ 记录最新拉取时间
+        
         _parseAndSetData(calendar, rawTopData);
-      } else if (todayAnime.isEmpty) {
+      } else {
         throw Exception("API返回了空数据");
       }
+      
     } catch (e) {
       debugPrint('加载失败: $e');
-      if (mounted && todayAnime.isEmpty && topAnime.isEmpty) {
-        setState(() {
-          isLoading = false;
-          errorMessage = "数据加载失败，请检查网络后重试";
-        });
-      } else if (mounted) {
+      // 如果失败且屏幕上毫无数据，才关闭 Loading 状态（这里通常可以加一个 Toast 提示网络错误）
+      if (mounted && todayAnime.isEmpty) {
         setState(() => isLoading = false);
       }
     }
@@ -109,7 +121,6 @@ class _HomePageState extends State<HomePage> {
         todayAnime = parsedToday;
         topAnime = parsedTop;
         isLoading = false;
-        errorMessage = null;
       });
     }
   }
@@ -134,26 +145,6 @@ class _HomePageState extends State<HomePage> {
           ),
         );
       }).toList(),
-    );
-  }
-
-  // ✨ 商业化改造：构建错误重试 UI
-  Widget _buildErrorView() {
-    return Center(
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.center,
-        children: [
-          const Icon(Icons.wifi_off_rounded, size: 64, color: Colors.grey),
-          const SizedBox(height: 16),
-          Text(errorMessage ?? '出错了', style: const TextStyle(color: Colors.grey, fontSize: 16)),
-          const SizedBox(height: 16),
-          ElevatedButton.icon(
-            onPressed: _loadData,
-            icon: const Icon(Icons.refresh),
-            label: const Text('点击重试'),
-          ),
-        ],
-      ),
     );
   }
 
@@ -188,49 +179,48 @@ class _HomePageState extends State<HomePage> {
               Expanded(
                 child: isLoading
                     ? const Center(child: CircularProgressIndicator())
-                    : errorMessage != null 
-                        ? _buildErrorView() // ✨ 显示优雅的错误页面
-                        : RefreshIndicator(
-                            onRefresh: _loadData, 
-                            child: SingleChildScrollView(
-                              physics: const AlwaysScrollableScrollPhysics(),
-                              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
+                    : RefreshIndicator(
+                        // ✨ 核心配合：当用户手动下拉刷新时，传入 forceRefresh: true，强制走网络
+                        onRefresh: () => _loadData(forceRefresh: true), 
+                        child: SingleChildScrollView(
+                          physics: const AlwaysScrollableScrollPhysics(),
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
+                          child: Column(
+                            crossAxisAlignment: CrossAxisAlignment.start,
+                            children: [
+                              Row(
+                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Row(
-                                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                    children: [
-                                      Text(
-                                        showTodayOnly ? '📺 $todayString · 今日放送' : '📺 本周新番放送', 
-                                        style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)
-                                      ),
-                                      TextButton.icon(
-                                        onPressed: () => setState(() => showTodayOnly = !showTodayOnly),
-                                        icon: Icon(showTodayOnly ? Icons.calendar_view_week : Icons.today),
-                                        label: Text(showTodayOnly ? '看本周' : '看今日'),
-                                      )
-                                    ],
+                                  Text(
+                                    showTodayOnly ? '📺 $todayString · 今日放送' : '📺 本周新番放送', 
+                                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)
                                   ),
-                                  const SizedBox(height: 12),
-                                  
-                                  showTodayOnly 
-                                    ? AnimeGrid(animeList: todayAnime, isTop: false)
-                                    : _buildWeekSchedule(),
-                                  
-                                  const SizedBox(height: 32),
-                                  
-                                  const Padding(
-                                    padding: EdgeInsets.only(bottom: 12.0),
-                                    child: Text('🏆 本年度高分榜', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
-                                  ),
-                                  AnimeGrid(animeList: topAnime, isTop: true),
-                                  
-                                  const SizedBox(height: 40),
+                                  TextButton.icon(
+                                    onPressed: () => setState(() => showTodayOnly = !showTodayOnly),
+                                    icon: Icon(showTodayOnly ? Icons.calendar_view_week : Icons.today),
+                                    label: Text(showTodayOnly ? '看本周' : '看今日'),
+                                  )
                                 ],
                               ),
-                            ),
+                              const SizedBox(height: 12),
+                              
+                              showTodayOnly 
+                                ? AnimeGrid(animeList: todayAnime, isTop: false)
+                                : _buildWeekSchedule(),
+                              
+                              const SizedBox(height: 32),
+                              
+                              const Padding(
+                                padding: EdgeInsets.only(bottom: 12.0),
+                                child: Text('🏆 本年度高分榜', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                              ),
+                              AnimeGrid(animeList: topAnime, isTop: true),
+                              
+                              const SizedBox(height: 40),
+                            ],
                           ),
+                        ),
+                      ),
               ),
             ],
           ),

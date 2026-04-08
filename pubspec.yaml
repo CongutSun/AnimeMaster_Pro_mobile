@@ -45,6 +45,7 @@ dependencies:
   url_launcher: ^6.3.2
   package_info_plus: ^9.0.1
   shorebird_code_push: ^2.0.5
+  cached_network_image: ^3.4.1
 
 dev_dependencies:
   flutter_test:

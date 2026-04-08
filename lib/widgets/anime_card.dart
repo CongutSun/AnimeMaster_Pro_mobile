@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:cached_network_image/cached_network_image.dart'; // ✨ 引入强力图片缓存库
 import '../models/anime.dart';
 import '../screens/detail_page.dart';
 
@@ -10,13 +11,16 @@ class AnimeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    // 智能获取当前是深色还是浅色模式，用于适配骨架屏底色
+    final isDarkMode = Theme.of(context).brightness == Brightness.dark;
+    final placeholderColor = isDarkMode ? Colors.grey.shade800 : Colors.grey.shade200;
+
     return GestureDetector(
       onTap: () {
         Navigator.push(
           context,
           MaterialPageRoute(
             builder: (context) => DetailPage(
-              // ✨ 核心修复：精准传递详情页需要的 animeId 和 initialName 参数
               animeId: anime.id,
               initialName: anime.nameCn.isNotEmpty ? anime.nameCn : anime.name,
             ),
@@ -35,9 +39,30 @@ class AnimeCard extends StatelessWidget {
                 boxShadow: [
                   BoxShadow(color: Colors.black.withValues(alpha: 0.1), blurRadius: 4, offset: const Offset(0, 2))
                 ],
-                image: DecorationImage(
-                  image: NetworkImage(anime.imageUrl),
-                  fit: BoxFit.cover, 
+              ),
+              // ✨ 核心修复：使用 ClipRRect 裁剪圆角，内部替换为 CachedNetworkImage
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(8),
+                child: CachedNetworkImage(
+                  imageUrl: anime.imageUrl,
+                  fit: BoxFit.cover,
+                  fadeInDuration: const Duration(milliseconds: 300), // ✨ 300毫秒优雅渐显动画
+                  
+                  // ✨ 占位图：在从磁盘/网络加载的几毫秒到几百毫秒内，显示柔和的底色块，彻底消灭白屏刺眼感
+                  placeholder: (context, url) => Container(
+                    color: placeholderColor,
+                    child: const Center(
+                      child: Icon(Icons.image_outlined, color: Colors.grey, size: 24),
+                    ),
+                  ),
+                  
+                  // ✨ 错误图：即使网络断开或图片被墙，也不会引发红屏崩溃，而是显示优雅的破损图标
+                  errorWidget: (context, url, error) => Container(
+                    color: placeholderColor,
+                    child: const Center(
+                      child: Icon(Icons.broken_image_outlined, color: Colors.grey, size: 24),
+                    ),
+                  ),
                 ),
               ),
             ),
