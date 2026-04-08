@@ -4,30 +4,35 @@ import 'package:html/parser.dart' as parser;
 import 'package:flutter/foundation.dart';
 import 'dio_client.dart'; 
 
+class _ApiConfig {
+  static const String apiBase = 'https://api.bgm.tv';
+  static const String webBase = 'https://bgm.tv';
+  static const String chiiBase = 'https://chii.in';
+}
+
 class BangumiApi {
   static final Dio _dio = DioClient().dio;
 
-  // ✨ 修复 1：增加 type 参数，默认 2(番剧)，可传 1(书籍)
   static Future<List<dynamic>> search(String keyword, {int type = 2}) async {
     try {
-      final response = await _dio.get('https://api.bgm.tv/search/subject/${Uri.encodeComponent(keyword)}?type=$type');
+      final response = await _dio.get('${_ApiConfig.apiBase}/search/subject/${Uri.encodeComponent(keyword)}?type=$type');
       if (response.statusCode == 200) {
         return response.data['list'] ?? [];
       }
-    } catch (e) {
-      debugPrint('Search Error: $e');
+    } catch (e, stackTrace) {
+      debugPrint('Search Error: $e\n$stackTrace');
     }
     return [];
   }
 
   static Future<List<dynamic>> getCalendar() async {
     try {
-      final response = await _dio.get('https://api.bgm.tv/calendar');
+      final response = await _dio.get('${_ApiConfig.apiBase}/calendar');
       if (response.statusCode == 200) {
         return response.data;
       }
-    } catch (e) {
-      debugPrint('Calendar Error: $e');
+    } catch (e, stackTrace) {
+      debugPrint('Calendar Error: $e\n$stackTrace');
     }
     return [];
   }
@@ -38,13 +43,13 @@ class BangumiApi {
 
     try {
       var response = await _dio.get(
-        'https://bgm.tv/anime/browser/airtime/$year?sort=rank',
+        '${_ApiConfig.webBase}/anime/browser/airtime/$year?sort=rank',
         options: Options(responseType: ResponseType.bytes),
       );
       
       if (response.statusCode != 200) {
         response = await _dio.get(
-          'https://bgm.tv/anime/browser?sort=rank',
+          '${_ApiConfig.webBase}/anime/browser?sort=rank',
           options: Options(responseType: ResponseType.bytes),
         );
       }
@@ -82,20 +87,20 @@ class BangumiApi {
           }
         }
       }
-    } catch (e) {
-      debugPrint('YearTop Error: $e');
+    } catch (e, stackTrace) {
+      debugPrint('YearTop Error: $e\n$stackTrace');
     }
     return results;
   }
 
   static Future<Map<String, dynamic>?> getAnimeDetail(int id) async {
     try {
-      final response = await _dio.get('https://api.bgm.tv/v0/subjects/$id');
+      final response = await _dio.get('${_ApiConfig.apiBase}/v0/subjects/$id');
       if (response.statusCode == 200) {
         return response.data;
       }
-    } catch (e) {
-      debugPrint('获取详情失败: $e');
+    } catch (e, stackTrace) {
+      debugPrint('获取详情失败: $e\n$stackTrace');
     }
     return null;
   }
@@ -105,16 +110,18 @@ class BangumiApi {
     
     try {
       final response = await _dio.get(
-        'https://api.bgm.tv/v0/users/$username/collections/$subjectId',
+        '${_ApiConfig.apiBase}/v0/users/$username/collections/$subjectId',
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
       if (response.statusCode == 200) {
         return response.data;
       }
     } on DioException catch (e) {
-      if (e.response?.statusCode != 404) {
-        debugPrint('获取收藏状态失败: $e');
+      if (e.response?.statusCode != 404) { // 404 是正常业务逻辑（未收藏）
+        debugPrint('获取收藏状态失败: ${e.message}');
       }
+    } catch (e, stackTrace) {
+      debugPrint('获取收藏状态未知错误: $e\n$stackTrace');
     }
     return null; 
   }
@@ -122,12 +129,12 @@ class BangumiApi {
   static Future<List<dynamic>> getUserCollectionList(String username, {int type = 3, int subjectType = 2}) async {
     if (username.isEmpty) return [];
     try {
-      final response = await _dio.get('https://api.bgm.tv/v0/users/$username/collections?subject_type=$subjectType&type=$type&limit=100');
+      final response = await _dio.get('${_ApiConfig.apiBase}/v0/users/$username/collections?subject_type=$subjectType&type=$type&limit=100');
       if (response.statusCode == 200) {
         return response.data['data'] ?? [];
       }
-    } catch (e) {
-      debugPrint('获取追番/书籍列表失败: $e');
+    } catch (e, stackTrace) {
+      debugPrint('获取追番/书籍列表失败: $e\n$stackTrace');
     }
     return [];
   }
@@ -137,18 +144,19 @@ class BangumiApi {
 
     try {
       final response = await _dio.post(
-        'https://api.bgm.tv/v0/users/-/collections/$subjectId',
+        '${_ApiConfig.apiBase}/v0/users/-/collections/$subjectId',
         data: postData, 
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
       
+      // 判断 2xx 的标准商业化写法
       if (response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300) {
         return true;
       } else {
         debugPrint('同步失败，服务器返回: ${response.statusCode} - ${response.data}');
       }
-    } catch (e) {
-      debugPrint('同步网络异常: $e');
+    } catch (e, stackTrace) {
+      debugPrint('同步网络异常: $e\n$stackTrace');
     }
     return false;
   }
@@ -157,7 +165,7 @@ class BangumiApi {
     if (token.isEmpty) return false;
     try {
       final response = await _dio.post(
-        'https://api.bgm.tv/subject/$subjectId/update/watched_eps', 
+        '${_ApiConfig.apiBase}/subject/$subjectId/update/watched_eps', 
         data: {'watched_eps': epStatus.toString()},                 
         options: Options(
           headers: {'Authorization': 'Bearer $token'},
@@ -167,8 +175,8 @@ class BangumiApi {
       if (response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300) {
         return true;
       }
-    } catch (e) {
-      debugPrint('更新进度异常: $e');
+    } catch (e, stackTrace) {
+      debugPrint('更新进度异常: $e\n$stackTrace');
     }
     return false;
   }
@@ -178,7 +186,7 @@ class BangumiApi {
 
     try {
       final response = await _dio.get(
-        'https://chii.in/subject/$id',
+        '${_ApiConfig.chiiBase}/subject/$id',
         options: Options(responseType: ResponseType.bytes),
       );
       
@@ -213,8 +221,8 @@ class BangumiApi {
           }
         }
       }
-    } catch (e) {
-      debugPrint('获取热评失败: $e');
+    } catch (e, stackTrace) {
+      debugPrint('获取热评失败: $e\n$stackTrace');
     }
     return comments;
   }
