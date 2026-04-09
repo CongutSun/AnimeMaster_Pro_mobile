@@ -8,6 +8,12 @@ import '../api/bangumi_api.dart';
 import 'magnet_config_page.dart';
 import 'category_result_page.dart';
 
+// ✨ 全局通用的防盗链请求头
+const Map<String, String> bgmHttpHeaders = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Referer': 'https://bgm.tv/',
+};
+
 class DetailPage extends StatefulWidget {
   final int animeId;
   final String initialName;
@@ -65,7 +71,6 @@ class _DetailPageState extends State<DetailPage> with SingleTickerProviderStateM
     super.dispose();
   }
 
-  /// 执行并发请求获取所有详情数据
   Future<void> _loadAllData() async {
     final provider = Provider.of<SettingsProvider>(context, listen: false);
     final bgmUsername = provider.bgmAcc;
@@ -124,7 +129,6 @@ class _DetailPageState extends State<DetailPage> with SingleTickerProviderStateM
     }
   }
 
-  /// 执行进度及收藏状态的同步操作
   Future<void> _syncToCloud() async {
     final bgmToken = Provider.of<SettingsProvider>(context, listen: false).bgmToken;
 
@@ -172,7 +176,6 @@ class _DetailPageState extends State<DetailPage> with SingleTickerProviderStateM
     }
   }
 
-  /// 唤起长评论编辑视图
   void _showFullScreenCommentEditor() {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -235,7 +238,6 @@ class _DetailPageState extends State<DetailPage> with SingleTickerProviderStateM
     );
   }
 
-  /// 路由导航逻辑处理器
   void _navigateToCategorySearch({required String title, required String mode, required dynamic query}) {
     Navigator.push(context, MaterialPageRoute(
       builder: (context) => CategoryResultPage(title: title, searchMode: mode, query: query, searchType: widget.subjectType)
@@ -248,7 +250,6 @@ class _DetailPageState extends State<DetailPage> with SingleTickerProviderStateM
     ));
   }
 
-  /// 构建数字进度微调组件
   Widget _buildProgressAdjuster({required String title, required int value, required VoidCallback onMinus, required VoidCallback onPlus}) {
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
@@ -279,7 +280,6 @@ class _DetailPageState extends State<DetailPage> with SingleTickerProviderStateM
     );
   }
 
-  /// 构建横向滑动列表容器
   Widget _buildHorizontalListContainer({
     required String title,
     required List<dynamic> items,
@@ -308,7 +308,6 @@ class _DetailPageState extends State<DetailPage> with SingleTickerProviderStateM
     );
   }
 
-  /// 构建顶部资料与操作区域
   Widget _buildTopHeader(ThemeData theme) {
     String originalName = detailData?['name'] ?? widget.initialName;
     String cnName = detailData?['name_cn'] ?? widget.initialName;
@@ -339,7 +338,7 @@ class _DetailPageState extends State<DetailPage> with SingleTickerProviderStateM
                 child: ClipRRect(
                   borderRadius: BorderRadius.circular(8),
                   child: posterUrl.isNotEmpty
-                      ? CachedNetworkImage(imageUrl: posterUrl, width: 110, height: 160, fit: BoxFit.cover)
+                      ? CachedNetworkImage(imageUrl: posterUrl, width: 110, height: 160, fit: BoxFit.cover, httpHeaders: bgmHttpHeaders)
                       : Container(width: 110, height: 160, color: theme.dividerColor, child: const Icon(Icons.movie, size: 40)),
                 ),
               ),
@@ -544,10 +543,55 @@ class _DetailPageState extends State<DetailPage> with SingleTickerProviderStateM
             if (item['images'] != null && item['images'] is Map) imgUrl = item['images']['grid'] ?? item['images']['large'] ?? '';
             
             return GestureDetector(
+              // ✨ 核心修改：通过判断弹出选择框
               onTap: () {
                 if (actorId != 0) {
-                  _navigateToCategorySearch(title: actorName, mode: 'person', query: actorId);
+                  showDialog(
+                    context: context,
+                    builder: (BuildContext context) {
+                      return SimpleDialog(
+                        title: const Text('请选择查看内容', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                        children: [
+                          SimpleDialogOption(
+                            onPressed: () {
+                              Navigator.pop(context); 
+                              _navigateToCategorySearch(title: name, mode: 'character', query: id);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8.0),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.person, color: accentColor, size: 20),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: Text('查看角色 [$name]', style: const TextStyle(fontSize: 15))),
+                                ],
+                              ),
+                            ),
+                          ),
+                          Divider(height: 1, color: theme.dividerColor.withValues(alpha: 0.2)),
+                          SimpleDialogOption(
+                            onPressed: () {
+                              Navigator.pop(context); 
+                              _navigateToCategorySearch(title: actorName, mode: 'person', query: actorId);
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8.0),
+                              child: Row(
+                                children: [
+                                  Icon(Icons.mic, color: Colors.orange, size: 20),
+                                  const SizedBox(width: 12),
+                                  Expanded(child: Text('查看声优 [$actorName]', style: const TextStyle(fontSize: 15))),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ],
+                      );
+                    }
+                  );
                 } else {
+                  // 如果没有声优，直接跳角色
                   _navigateToCategorySearch(title: name, mode: 'character', query: id);
                 }
               },
@@ -560,7 +604,7 @@ class _DetailPageState extends State<DetailPage> with SingleTickerProviderStateM
                     ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: imgUrl.isNotEmpty
-                          ? CachedNetworkImage(imageUrl: imgUrl, width: 85, height: 110, fit: BoxFit.cover)
+                          ? CachedNetworkImage(imageUrl: imgUrl, width: 85, height: 110, fit: BoxFit.cover, httpHeaders: bgmHttpHeaders)
                           : Container(width: 85, height: 110, color: theme.dividerColor, child: const Icon(Icons.person, color: Colors.grey)),
                     ),
                     const SizedBox(height: 6),
@@ -595,7 +639,7 @@ class _DetailPageState extends State<DetailPage> with SingleTickerProviderStateM
                     ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: imgUrl.isNotEmpty
-                          ? CachedNetworkImage(imageUrl: imgUrl, width: 85, height: 110, fit: BoxFit.cover)
+                          ? CachedNetworkImage(imageUrl: imgUrl, width: 85, height: 110, fit: BoxFit.cover, httpHeaders: bgmHttpHeaders)
                           : Container(width: 85, height: 110, color: theme.dividerColor, child: const Icon(Icons.engineering, color: Colors.grey)),
                     ),
                     const SizedBox(height: 6),
@@ -631,7 +675,7 @@ class _DetailPageState extends State<DetailPage> with SingleTickerProviderStateM
                     ClipRRect(
                       borderRadius: BorderRadius.circular(8),
                       child: imgUrl.isNotEmpty
-                          ? CachedNetworkImage(imageUrl: imgUrl, width: 100, height: 130, fit: BoxFit.cover)
+                          ? CachedNetworkImage(imageUrl: imgUrl, width: 100, height: 130, fit: BoxFit.cover, httpHeaders: bgmHttpHeaders)
                           : Container(width: 100, height: 130, color: theme.dividerColor, child: const Icon(Icons.movie, color: Colors.grey)),
                     ),
                     const SizedBox(height: 6),
@@ -737,7 +781,7 @@ class _DetailPageState extends State<DetailPage> with SingleTickerProviderStateM
                                 child: Stack(
                                   fit: StackFit.expand,
                                   children: [
-                                    CachedNetworkImage(imageUrl: posterUrl, fit: BoxFit.cover),
+                                    CachedNetworkImage(imageUrl: posterUrl, fit: BoxFit.cover, httpHeaders: bgmHttpHeaders),
                                     BackdropFilter(
                                       filter: ImageFilter.blur(sigmaX: 30, sigmaY: 30),
                                       child: Container(

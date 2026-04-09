@@ -1,3 +1,4 @@
+import 'dart:io'; // ✨ 引入 io 库以接管全局 HTTP
 import 'dart:ui'; 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
@@ -5,8 +6,20 @@ import 'package:shorebird_code_push/shorebird_code_push.dart';
 import 'providers/settings_provider.dart';
 import 'screens/home_page.dart';
 
+class MyHttpOverrides extends HttpOverrides {
+  @override
+  HttpClient createHttpClient(SecurityContext? context) {
+    return super.createHttpClient(context)
+      // 解决某些自签证书导致的 HTTPS 报错问题
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+  }
+}
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // 强制忽略证书错误，并准备在具体的图片库里配置 UA
+  HttpOverrides.global = MyHttpOverrides();
 
   FlutterError.onError = (FlutterErrorDetails details) {
     debugPrint('【Flutter 全局异常拦截】: ${details.exceptionAsString()}');
@@ -33,20 +46,16 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 使用 Consumer 监听设置页面的变化
     return Consumer<SettingsProvider>(
       builder: (context, settings, child) {
-        // 判断用户在设置里选的是不是暗黑模式
         final isDarkMode = settings.themeMode.contains('Dark');
 
         return MaterialApp(
           title: '智能追番助手',
           debugShowCheckedModeBanner: false, 
           
-          // 自动跟随设置里的明暗主题
           themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
           
-          // ☀️ 明亮模式默认配色
           theme: ThemeData(
             brightness: Brightness.light,
             primarySwatch: Colors.blue,
@@ -58,7 +67,6 @@ class MyApp extends StatelessWidget {
             ),
           ),
           
-          // 🌙 暗黑模式默认配色
           darkTheme: ThemeData(
             brightness: Brightness.dark,
             scaffoldBackgroundColor: const Color(0xFF121212),
@@ -78,7 +86,6 @@ class MyApp extends StatelessWidget {
             );
           },
           
-          // 💡 用 UpdateCheckWrapper 把 HomePage 包裹起来
           home: const UpdateCheckWrapper(child: HomePage()),
         );
       },
@@ -86,6 +93,7 @@ class MyApp extends StatelessWidget {
   }
 }
 
+// ... 下面的 UpdateCheckWrapper 和 _UpdateCheckWrapperState 保持你原本的代码不变 ...
 class UpdateCheckWrapper extends StatefulWidget {
   final Widget child; 
   

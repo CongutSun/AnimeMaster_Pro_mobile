@@ -3,6 +3,12 @@ import 'package:cached_network_image/cached_network_image.dart'; // ✨ 引入�
 import '../models/anime.dart';
 import '../screens/detail_page.dart';
 
+// ✨ 添加全局通用的防盗链请求头，伪装成浏览器请求
+const Map<String, String> bgmHttpHeaders = {
+  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+  'Referer': 'https://bgm.tv/',
+};
+
 class AnimeCard extends StatelessWidget {
   final Anime anime;
   final bool isTop;
@@ -47,6 +53,7 @@ class AnimeCard extends StatelessWidget {
                   imageUrl: anime.imageUrl,
                   fit: BoxFit.cover,
                   fadeInDuration: const Duration(milliseconds: 300), // ✨ 300毫秒优雅渐显动画
+                  httpHeaders: bgmHttpHeaders, // ✨ 核心修复：注入防盗链 HTTP Headers
                   
                   // ✨ 占位图：在从磁盘/网络加载的几毫秒到几百毫秒内，显示柔和的底色块，彻底消灭白屏刺眼感
                   placeholder: (context, url) => Container(
