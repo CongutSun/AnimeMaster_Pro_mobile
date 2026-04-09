@@ -1,6 +1,7 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:flutter_secure_storage/flutter_secure_storage.dart';
 
 class SettingsProvider with ChangeNotifier {
   String _bgmAcc = '';
@@ -8,10 +9,13 @@ class SettingsProvider with ChangeNotifier {
   List<Map<String, String>> _rssSources = [];
   bool _isLoaded = false; 
 
-  // ✨ 新增界面外观属性
+  // 界面外观属性配置
   String _closeAction = '直接完全退出';
   String _themeMode = '明亮模式 (Light)';
   String _customBgPath = '';
+
+  // 实例化安全存储对象
+  final FlutterSecureStorage _secureStorage = const FlutterSecureStorage();
 
   String get bgmAcc => _bgmAcc;
   String get bgmToken => _bgmToken;
@@ -28,13 +32,15 @@ class SettingsProvider with ChangeNotifier {
 
   Future<void> _loadSettings() async {
     final prefs = await SharedPreferences.getInstance();
+    
+    // 常规数据从 SharedPreferences 读取
     _bgmAcc = prefs.getString('bgm_acc') ?? '';
-    _bgmToken = prefs.getString('bgm_token') ?? '';
-
-    // ✨ 加载外观设置
     _closeAction = prefs.getString('close_action') ?? '直接完全退出';
     _themeMode = prefs.getString('theme_mode') ?? '明亮模式 (Light)';
     _customBgPath = prefs.getString('custom_bg_path') ?? '';
+
+    // 敏感凭证从 Keychain / Keystore 读取
+    _bgmToken = await _secureStorage.read(key: 'bgm_token') ?? '';
 
     final rssString = prefs.getString('rss_sources');
     if (rssString != null) {
@@ -54,21 +60,26 @@ class SettingsProvider with ChangeNotifier {
   Future<void> updateAccount(String acc, String token) async {
     _bgmAcc = acc;
     _bgmToken = token;
+    
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('bgm_acc', acc);
-    await prefs.setString('bgm_token', token);
+    
+    // 敏感凭证写入安全存储区域
+    await _secureStorage.write(key: 'bgm_token', value: token);
+    
     notifyListeners();
   }
 
-  // ✨ 新增：更新外观设置并保存
   Future<void> updateAppearance(String action, String mode, String bgPath) async {
     _closeAction = action;
     _themeMode = mode;
     _customBgPath = bgPath;
+    
     final prefs = await SharedPreferences.getInstance();
     await prefs.setString('close_action', action);
     await prefs.setString('theme_mode', mode);
     await prefs.setString('custom_bg_path', bgPath);
+    
     notifyListeners();
   }
 

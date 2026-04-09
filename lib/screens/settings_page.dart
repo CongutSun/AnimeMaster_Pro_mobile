@@ -58,13 +58,12 @@ class _SettingsPageState extends State<SettingsPage> {
         aspectRatio: const CropAspectRatio(ratioX: 9, ratioY: 16), 
         uiSettings: [
           AndroidUiSettings(
-            toolbarTitle: '裁剪竖屏背景', 
+            toolbarTitle: '裁剪背景图片', 
             toolbarColor: Colors.teal.shade700, 
             toolbarWidgetColor: Colors.white, 
-            // ✨ 修复：删除了不存在的 initAspectRatio 预设，反正上面已经强制 9:16 了
             lockAspectRatio: true
           ),
-          IOSUiSettings(title: '裁剪背景', aspectRatioLockEnabled: true),
+          IOSUiSettings(title: '裁剪背景图片', aspectRatioLockEnabled: true),
         ],
       );
 
@@ -81,17 +80,28 @@ class _SettingsPageState extends State<SettingsPage> {
     provider.updateAccount(bgmAccController.text, bgmTokenController.text);
     provider.updateAppearance(provider.closeAction, themeMode, bgController.text);
 
-    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 设置已成功保存并全局应用！'), backgroundColor: Colors.green));
+    ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('设置已保存并生效。')));
   }
 
   void _addRss(SettingsProvider provider) {
-    if (rssNameController.text.isNotEmpty && rssUrlController.text.contains('{keyword}')) {
-      provider.addRssSource(rssNameController.text, rssUrlController.text);
-      rssNameController.clear();
-      rssUrlController.clear();
-    } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请输入站点名，且 URL 必须包含 {keyword}')));
+    final name = rssNameController.text.trim();
+    final url = rssUrlController.text.trim();
+
+    if (name.isEmpty || !url.contains('{keyword}')) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('输入无效：站点名称不可为空，且 URL 必须包含 {keyword} 变量。')));
+      return;
     }
+
+    // 强化 URL 安全校验，限制仅支持 HTTP/HTTPS 协议
+    final uri = Uri.tryParse(url);
+    if (uri == null || (uri.scheme != 'http' && uri.scheme != 'https')) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('输入无效：请提供合法的 HTTP 或 HTTPS 源地址。')));
+      return;
+    }
+
+    provider.addRssSource(name, url);
+    rssNameController.clear();
+    rssUrlController.clear();
   }
 
   void _deleteRss(SettingsProvider provider) {
@@ -116,7 +126,7 @@ class _SettingsPageState extends State<SettingsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('🎨 界面外观', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orange)),
+            const Text('界面外观配置', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.orange)),
             const SizedBox(height: 16),
             _buildSettingRow('主题模式:', _buildDropdown(['明亮模式 (Light)', '暗黑模式 (Dark)'], themeMode, (val) => setState(() => themeMode = val!))),
             const SizedBox(height: 12),
@@ -124,7 +134,7 @@ class _SettingsPageState extends State<SettingsPage> {
               children: [
                 Expanded(child: _buildTextField(bgController, readOnly: true, hint: '点击浏览选择图片')),
                 const SizedBox(width: 8),
-                ElevatedButton(onPressed: _pickAndCropImage, style: ElevatedButton.styleFrom(backgroundColor: Colors.grey.shade700, foregroundColor: Colors.white), child: const Text('浏览...')),
+                ElevatedButton(onPressed: _pickAndCropImage, style: ElevatedButton.styleFrom(backgroundColor: Colors.grey.shade700, foregroundColor: Colors.white), child: const Text('浏览')),
               ],
             )),
             const SizedBox(height: 16),
@@ -152,13 +162,13 @@ class _SettingsPageState extends State<SettingsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('👤 Bangumi 账号绑定', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue)),
+            const Text('Bangumi 账号绑定', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blue)),
             const SizedBox(height: 8),
-            const Text('注意：账号必须是个人主页链接里的 Username 或数字 UID！', style: TextStyle(fontSize: 12, color: Colors.redAccent)),
+            const Text('注：账号字段需填写个人主页链接中的 Username 或数字 UID。', style: TextStyle(fontSize: 12, color: Colors.redAccent)),
             const SizedBox(height: 16),
-            _buildSettingRow('Bgm 账号:', _buildTextField(bgmAccController, hint: '例如: 123456')),
+            _buildSettingRow('账号标识:', _buildTextField(bgmAccController, hint: '例如: 123456')),
             const SizedBox(height: 8),
-            _buildSettingRow('Bgm Token:', _buildTextField(bgmTokenController, obscureText: true, hint: 'Token')),
+            _buildSettingRow('访问凭证:', _buildTextField(bgmTokenController, obscureText: true, hint: 'Access Token')),
           ],
         ),
       ),
@@ -171,7 +181,7 @@ class _SettingsPageState extends State<SettingsPage> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text('📡 自定义资源站 (RSS源)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.brown)),
+            const Text('自定义资源站点 (RSS 配置)', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.brown)),
             const SizedBox(height: 8),
             Container(
               height: 120,
@@ -193,9 +203,9 @@ class _SettingsPageState extends State<SettingsPage> {
             const SizedBox(height: 8),
             Row(
               children: [
-                Expanded(flex: 3, child: _buildTextField(rssNameController, hint: '站点名')),
+                Expanded(flex: 3, child: _buildTextField(rssNameController, hint: '站点名称')),
                 const SizedBox(width: 8),
-                Expanded(flex: 7, child: _buildTextField(rssUrlController, hint: '必须包含 {keyword}')),
+                Expanded(flex: 7, child: _buildTextField(rssUrlController, hint: '源地址 (必须包含 {keyword})')),
               ],
             ),
             const SizedBox(height: 8),
@@ -213,7 +223,7 @@ class _SettingsPageState extends State<SettingsPage> {
     );
 
     return Scaffold(
-      appBar: AppBar(title: const Text('智能追番助手 设置', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)), centerTitle: true),
+      appBar: AppBar(title: const Text('系统设置', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)), centerTitle: true),
       body: SingleChildScrollView(
         padding: const EdgeInsets.all(16.0),
         child: isMobile 
@@ -226,7 +236,7 @@ class _SettingsPageState extends State<SettingsPage> {
                 const SizedBox(height: 16),
                 rssCard,
                 const SizedBox(height: 16),
-                ElevatedButton.icon(onPressed: _saveSettings, icon: const Icon(Icons.save), label: const Text('保存并应用', style: TextStyle(fontWeight: FontWeight.bold)), style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16))),
+                ElevatedButton.icon(onPressed: _saveSettings, icon: const Icon(Icons.save), label: const Text('保存并应用配置', style: TextStyle(fontWeight: FontWeight.bold)), style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(vertical: 16))),
               ],
             )
           : Row(
@@ -242,7 +252,7 @@ class _SettingsPageState extends State<SettingsPage> {
                       const SizedBox(height: 16),
                       rssCard,
                       const SizedBox(height: 16),
-                      Align(alignment: Alignment.centerRight, child: ElevatedButton.icon(onPressed: _saveSettings, icon: const Icon(Icons.save), label: const Text('保存并应用', style: TextStyle(fontWeight: FontWeight.bold)), style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16)))),
+                      Align(alignment: Alignment.centerRight, child: ElevatedButton.icon(onPressed: _saveSettings, icon: const Icon(Icons.save), label: const Text('保存并应用配置', style: TextStyle(fontWeight: FontWeight.bold)), style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade700, foregroundColor: Colors.white, padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16)))),
                     ],
                   ),
                 ),

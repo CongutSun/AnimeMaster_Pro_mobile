@@ -31,8 +31,8 @@ class _DetailPageState extends State<DetailPage> {
   String currentStatus = '未收藏';
   String currentRate = '暂不打分';
   
-  int currentEp = 0;  // 话/章/集
-  int currentVol = 0; // 卷/册 (仅书籍有效)
+  int currentEp = 0;  
+  int currentVol = 0; 
 
   final TextEditingController commentController = TextEditingController();
 
@@ -47,6 +47,13 @@ class _DetailPageState extends State<DetailPage> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _loadAllData();
     });
+  }
+
+  // 释放资源，防止内存泄露
+  @override
+  void dispose() {
+    commentController.dispose();
+    super.dispose();
   }
 
   Future<void> _loadAllData() async {
@@ -103,11 +110,11 @@ class _DetailPageState extends State<DetailPage> {
     final bgmToken = Provider.of<SettingsProvider>(context, listen: false).bgmToken;
 
     if (bgmToken.isEmpty) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先在设置中配置 Bgm Token！')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('同步失败：未配置有效的访问凭证。')));
       return;
     }
     if (currentStatus == '未收藏') {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('请先选择一个更新状态(如：在看)！')));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('操作提示：请先指定状态变更选项。')));
       return;
     }
 
@@ -118,7 +125,7 @@ class _DetailPageState extends State<DetailPage> {
       'ep_status': currentEp,
     };
     
-    // ✨ 核心修复：对于番剧（2），绝不打包 vol_status 参数，避免被服务器 400 拦截
+    // 逻辑修正：针对影视类别不传递 vol_status 参数，避免出现请求协议错误
     if (widget.subjectType == 1) {
       postData['vol_status'] = currentVol;
     }
@@ -136,9 +143,9 @@ class _DetailPageState extends State<DetailPage> {
 
     setState(() => isSyncing = false);
     if (success) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('✅ 云端同步成功！'), backgroundColor: Colors.green));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('云端数据同步成功。'), backgroundColor: Colors.green));
     } else {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('❌ 同步失败，请检查 Token 或网络。'), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('同步异常，请检查网络状态或凭证时效性。'), backgroundColor: Colors.red));
     }
   }
 
@@ -210,7 +217,7 @@ class _DetailPageState extends State<DetailPage> {
                         });
                         Navigator.pop(context);
                       },
-                      child: const Text('确认保存'),
+                      child: const Text('保存修改'),
                     ),
                   ],
                 ),
@@ -226,7 +233,7 @@ class _DetailPageState extends State<DetailPage> {
                     textAlignVertical: TextAlignVertical.top,
                     style: const TextStyle(fontSize: 15, height: 1.6),
                     decoration: const InputDecoration(
-                      hintText: '在这里挥洒你的长篇大论吧...\n(支持自动换行，写完后别忘了点击同步云端哦)',
+                      hintText: '请输入评价详情内容...',
                       border: InputBorder.none,
                     ),
                   ),
@@ -261,7 +268,7 @@ class _DetailPageState extends State<DetailPage> {
       ),
       child: Scaffold(
         appBar: AppBar(
-          title: Text(widget.subjectType == 2 ? '番剧详情与评价' : '书籍详情与评价', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Microsoft YaHei')),
+          title: Text(widget.subjectType == 2 ? '影视详情' : '书籍详情', style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Microsoft YaHei')),
           elevation: 1,
           centerTitle: true,
         ),
@@ -295,7 +302,7 @@ class _DetailPageState extends State<DetailPage> {
                                   children: [
                                     Icon(Icons.star_outline, color: highlightOrange, size: 20),
                                     const SizedBox(width: 4),
-                                    Text('官方评分: ${detailData?['rating']?['score'] ?? '0'}', style: const TextStyle(fontSize: 14)),
+                                    Text('综合评分: ${detailData?['rating']?['score'] ?? '暂无'}', style: const TextStyle(fontSize: 14)),
                                   ],
                                 ),
                                 const Text('|', style: TextStyle(color: Colors.grey)),
@@ -304,7 +311,7 @@ class _DetailPageState extends State<DetailPage> {
                                   children: [
                                     const Icon(Icons.calendar_month, color: Colors.brown, size: 20),
                                     const SizedBox(width: 4),
-                                    Text('首播/出版: ${detailData?['date'] ?? '未知'}', style: const TextStyle(fontSize: 14)),
+                                    Text('发行日期: ${detailData?['date'] ?? '未知'}', style: const TextStyle(fontSize: 14)),
                                   ],
                                 ),
                               ],
@@ -318,8 +325,8 @@ class _DetailPageState extends State<DetailPage> {
                                 Expanded(
                                   child: Text(
                                     widget.subjectType == 2 
-                                        ? '全网放送进度: 已出 ${detailData?['eps'] ?? '?'} 集'
-                                        : '全网出版进度: 已出 ${detailData?['eps'] ?? '?'} 卷/话', 
+                                        ? '总进度: 共 ${detailData?['eps'] ?? '?'} 集'
+                                        : '总进度: 共 ${detailData?['eps'] ?? '?'} 卷/章', 
                                     style: const TextStyle(fontSize: 14)
                                   ),
                                 ),
@@ -339,9 +346,9 @@ class _DetailPageState extends State<DetailPage> {
                           children: [
                             Row(
                               children: [
-                                Icon(Icons.rocket_launch, color: highlightBlue, size: 20),
+                                Icon(Icons.bookmark_outline, color: highlightBlue, size: 20),
                                 const SizedBox(width: 8),
-                                const Text('更新状态:', style: TextStyle(fontWeight: FontWeight.bold)),
+                                const Text('当前状态:', style: TextStyle(fontWeight: FontWeight.bold)),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Container(
@@ -369,7 +376,7 @@ class _DetailPageState extends State<DetailPage> {
                               children: [
                                 Icon(Icons.star, color: highlightOrange, size: 20),
                                 const SizedBox(width: 8),
-                                const Text('打分:', style: TextStyle(fontWeight: FontWeight.bold)),
+                                const Text('个人评分:', style: TextStyle(fontWeight: FontWeight.bold)),
                                 const SizedBox(width: 8),
                                 Expanded(
                                   child: Container(
@@ -399,20 +406,20 @@ class _DetailPageState extends State<DetailPage> {
                             
                             if (widget.subjectType == 1) ...[ 
                               _buildProgressAdjuster(
-                                title: '看到第几卷 (Vol)', 
+                                title: '阅读卷数 (Vol)', 
                                 value: currentVol, 
                                 onMinus: () => setState(() => currentVol--), 
                                 onPlus: () => setState(() => currentVol++)
                               ),
                               _buildProgressAdjuster(
-                                title: '看到第几话 (Chap)', 
+                                title: '阅读章数 (Chap)', 
                                 value: currentEp, 
                                 onMinus: () => setState(() => currentEp--), 
                                 onPlus: () => setState(() => currentEp++)
                               ),
                             ] else ...[ 
                               _buildProgressAdjuster(
-                                title: '看到第几集 (Ep)', 
+                                title: '观看集数 (Ep)', 
                                 value: currentEp, 
                                 onMinus: () => setState(() => currentEp--), 
                                 onPlus: () => setState(() => currentEp++)
@@ -429,7 +436,7 @@ class _DetailPageState extends State<DetailPage> {
                                   maxLines: 5,
                                   style: const TextStyle(fontFamily: 'Microsoft YaHei', fontSize: 13, height: 1.5),
                                   decoration: InputDecoration(
-                                    hintText: '写句短评，或者点击右下角全屏写长评...',
+                                    hintText: '输入短评，或使用右下角展开长评模式。',
                                     hintStyle: const TextStyle(fontSize: 13),
                                     contentPadding: const EdgeInsets.fromLTRB(12, 12, 40, 12), 
                                     border: OutlineInputBorder(borderRadius: BorderRadius.circular(8), borderSide: BorderSide(color: theme.dividerColor)),
@@ -440,7 +447,7 @@ class _DetailPageState extends State<DetailPage> {
                                   bottom: 4,
                                   child: IconButton(
                                     icon: Icon(Icons.fullscreen, color: highlightBlue),
-                                    tooltip: '全屏长评模式',
+                                    tooltip: '全屏模式',
                                     onPressed: _showFullScreenCommentEditor,
                                   ),
                                 ),
@@ -465,7 +472,7 @@ class _DetailPageState extends State<DetailPage> {
                             if (provider.bgmAcc.isNotEmpty && !hasFetchedPersonalData)
                               const Padding(
                                 padding: EdgeInsets.only(top: 12.0),
-                                child: Text('⚠️ 提示：未获取到您的旧评价。如果这不合理，请检查您的 Bgm 账号是否填成了中文昵称 (必须填 UID)', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
+                                child: Text('提示：未获取到历史收藏状态。请确认账号设定值为有效的用户 UID。', style: TextStyle(color: Colors.redAccent, fontSize: 12)),
                               ),
                           ],
                         ),
@@ -485,7 +492,7 @@ class _DetailPageState extends State<DetailPage> {
                         crossAxisAlignment: CrossAxisAlignment.start,
                         children: [
                           Text(
-                            detailData?['summary'] ?? '暂无简介',
+                            detailData?['summary'] ?? '暂无内容简介。',
                             style: const TextStyle(fontSize: 14, height: 1.6),
                           ),
                           Padding(
@@ -496,12 +503,12 @@ class _DetailPageState extends State<DetailPage> {
                             children: [
                               Icon(Icons.chat, color: highlightBlue, size: 20),
                               const SizedBox(width: 8),
-                              Text('网友热评', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: highlightBlue)),
+                              Text('评价精选', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: highlightBlue)),
                             ],
                           ),
                           const SizedBox(height: 12),
                           if (realComments.isEmpty)
-                            const Text('暂无热评或网络加载失败 (可能是 chii.in 域名被墙)', style: TextStyle(color: Colors.grey, fontSize: 13))
+                            const Text('未能加载评论数据或当前列表为空。', style: TextStyle(color: Colors.grey, fontSize: 13))
                           else
                             ...realComments.map((comment) => Padding(
                               padding: const EdgeInsets.only(bottom: 16.0),
@@ -562,8 +569,8 @@ class _DetailPageState extends State<DetailPage> {
                   aliases: nameList,
                 )));
               },
-              icon: const Icon(Icons.rocket_launch, color: Colors.white),
-              label: const Text('去搜刮下载', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white, fontFamily: 'Microsoft YaHei')),
+              icon: const Icon(Icons.search, color: Colors.white),
+              label: const Text('前往搜索资源', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white, fontFamily: 'Microsoft YaHei')),
               style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
             ),
           ),

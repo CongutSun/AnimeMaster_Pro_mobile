@@ -7,7 +7,7 @@ import '../providers/settings_provider.dart';
 import '../api/bangumi_api.dart';
 import '../models/anime.dart'; 
 import '../widgets/top_tool_bar.dart'; 
-import '../widgets/anime_grid.dart';   
+import '../widgets/anime_grid.dart';  
 
 class HomePage extends StatefulWidget {
   const HomePage({super.key});
@@ -27,49 +27,53 @@ class _HomePageState extends State<HomePage> {
   @override
   void initState() {
     super.initState();
-    // 默认正常加载
     _loadData();
   }
 
-  // ✨ 核心升级：增加 forceRefresh 参数，用于判断是否是用户手动下拉刷新
+  /// 数据加载主入口
+  /// [forceRefresh] 参数用于区分是否为用户主动触发的下拉刷新操作
   Future<void> _loadData({bool forceRefresh = false}) async {
     final prefs = await SharedPreferences.getInstance();
     
     final cachedCalendar = prefs.getString('cache_calendar');
     final cachedTop = prefs.getString('cache_top');
-    // ✨ 读取上次缓存的时间
     final cacheTimeStr = prefs.getString('cache_time');
 
     bool hasValidCache = false;
 
-    // 1. 如果有缓存，并且不是用户手动强制刷新，我们来检查缓存是否过期
+    // 1. 缓存校验阶段
     if (cachedCalendar != null && cachedTop != null && cacheTimeStr != null && !forceRefresh) {
       try {
         final cacheTime = DateTime.parse(cacheTimeStr);
         final now = DateTime.now();
         
-        // ✨ 商业化策略：缓存 4 小时内有效。你可以根据需要调整这个时间
+        // 缓存有效期设定为 4 小时
         if (now.difference(cacheTime).inHours < 4) {
           final calendar = jsonDecode(cachedCalendar);
           final rawTopData = jsonDecode(cachedTop) as List<dynamic>;
           
           _parseAndSetData(calendar, rawTopData.map((e) => e as Map<String, dynamic>).toList());
-          hasValidCache = true; // 标记缓存有效
+          hasValidCache = true; 
         }
       } catch (e) {
-        debugPrint('缓存解析或时间校验失败: $e');
+        debugPrint('[HomePage] Cache parsing or validation failed: $e');
       }
     } 
     
-    // 如果没有有效缓存，才需要显示转圈 Loading
+    // 2. 状态分发与网络请求阶段
     if (!hasValidCache) {
+      // 场景 A：无有效缓存或用户强制刷新，需展示 Loading 指示器
       setState(() => isLoading = true);
+      await _fetchNetworkData(prefs, isSilent: false);
     } else {
-      // ✨ 如果缓存有效，直接 Return 终止函数！绝不偷偷发起多余的网络请求，界面绝对不会闪烁！
-      return;
+      // 场景 B：缓存有效，界面已渲染。发起静默后台刷新，确保数据新鲜度
+      _fetchNetworkData(prefs, isSilent: true);
     }
+  }
 
-    // 2. 只有在【无缓存】、【缓存过期】或【用户手动下拉】时，才走网络请求
+  /// 执行实际的 API 网络请求
+  /// [isSilent] 控制发生异常或请求过程中是否干预 UI 加载状态
+  Future<void> _fetchNetworkData(SharedPreferences prefs, {bool isSilent = false}) async {
     try {
       final results = await Future.wait([
         BangumiApi.getCalendar(),
@@ -79,26 +83,27 @@ class _HomePageState extends State<HomePage> {
       final List<dynamic> calendar = results[0];
       final List<Map<String, dynamic>> rawTopData = results[1] as List<Map<String, dynamic>>;
 
-      // 只有接口真的返回了数据，才写入缓存并记录当前时间
       if (calendar.isNotEmpty && rawTopData.isNotEmpty) {
-        prefs.setString('cache_calendar', jsonEncode(calendar));
-        prefs.setString('cache_top', jsonEncode(rawTopData));
-        prefs.setString('cache_time', DateTime.now().toIso8601String()); // ✨ 记录最新拉取时间
+        // 数据持久化
+        await prefs.setString('cache_calendar', jsonEncode(calendar));
+        await prefs.setString('cache_top', jsonEncode(rawTopData));
+        await prefs.setString('cache_time', DateTime.now().toIso8601String());
         
         _parseAndSetData(calendar, rawTopData);
-      } else {
-        throw Exception("API返回了空数据");
+      } else if (!isSilent) {
+        throw Exception("API returned empty data sequence.");
       }
-      
     } catch (e) {
-      debugPrint('加载失败: $e');
-      // 如果失败且屏幕上毫无数据，才关闭 Loading 状态（这里通常可以加一个 Toast 提示网络错误）
-      if (mounted && todayAnime.isEmpty) {
+      debugPrint('[HomePage] Network fetch exception: $e');
+      
+      // 仅在非静默模式且页面无数据时撤销 Loading 状态
+      if (!isSilent && mounted && todayAnime.isEmpty) {
         setState(() => isLoading = false);
       }
     }
   }
 
+  /// 解析服务端数据并更新组件状态
   void _parseAndSetData(List<dynamic> calendar, List<Map<String, dynamic>> rawTopData) {
     final weekday = DateTime.now().weekday;
     final days = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"];
@@ -125,6 +130,7 @@ class _HomePageState extends State<HomePage> {
     }
   }
 
+  /// 构建整周排期视图
   Widget _buildWeekSchedule() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -138,8 +144,17 @@ class _HomePageState extends State<HomePage> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
-              Text('📺 $weekdayName', style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.blue)),
-              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(Icons.live_tv, color: Colors.blueAccent, size: 20),
+                  const SizedBox(width: 8),
+                  Text(
+                    weekdayName, 
+                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueAccent)
+                  ),
+                ],
+              ),
+              const SizedBox(height: 12),
               AnimeGrid(animeList: dayAnime, isTop: false),
             ],
           ),
@@ -180,7 +195,6 @@ class _HomePageState extends State<HomePage> {
                 child: isLoading
                     ? const Center(child: CircularProgressIndicator())
                     : RefreshIndicator(
-                        // ✨ 核心配合：当用户手动下拉刷新时，传入 forceRefresh: true，强制走网络
                         onRefresh: () => _loadData(forceRefresh: true), 
                         child: SingleChildScrollView(
                           physics: const AlwaysScrollableScrollPhysics(),
@@ -191,18 +205,29 @@ class _HomePageState extends State<HomePage> {
                               Row(
                                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                                 children: [
-                                  Text(
-                                    showTodayOnly ? '📺 $todayString · 今日放送' : '📺 本周新番放送', 
-                                    style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold)
+                                  Expanded(
+                                    child: Row(
+                                      children: [
+                                        const Icon(Icons.calendar_month, color: Colors.blueAccent),
+                                        const SizedBox(width: 8),
+                                        Flexible(
+                                          child: Text(
+                                            showTodayOnly ? '$todayString · 今日排期' : '本周整体排期', 
+                                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                                            overflow: TextOverflow.ellipsis,
+                                          ),
+                                        ),
+                                      ],
+                                    ),
                                   ),
                                   TextButton.icon(
                                     onPressed: () => setState(() => showTodayOnly = !showTodayOnly),
-                                    icon: Icon(showTodayOnly ? Icons.calendar_view_week : Icons.today),
-                                    label: Text(showTodayOnly ? '看本周' : '看今日'),
+                                    icon: Icon(showTodayOnly ? Icons.calendar_view_week : Icons.today, size: 18),
+                                    label: Text(showTodayOnly ? '查看全周' : '查看今日'),
                                   )
                                 ],
                               ),
-                              const SizedBox(height: 12),
+                              const SizedBox(height: 16),
                               
                               showTodayOnly 
                                 ? AnimeGrid(animeList: todayAnime, isTop: false)
@@ -210,9 +235,15 @@ class _HomePageState extends State<HomePage> {
                               
                               const SizedBox(height: 32),
                               
-                              const Padding(
-                                padding: EdgeInsets.only(bottom: 12.0),
-                                child: Text('🏆 本年度高分榜', style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+                              Padding(
+                                padding: const EdgeInsets.only(bottom: 16.0),
+                                child: Row(
+                                  children: [
+                                    const Icon(Icons.emoji_events, color: Colors.orange),
+                                    const SizedBox(width: 8),
+                                    const Text('本年度高分榜单', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                  ],
+                                ),
                               ),
                               AnimeGrid(animeList: topAnime, isTop: true),
                               
