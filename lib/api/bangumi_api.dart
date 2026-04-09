@@ -20,7 +20,79 @@ class BangumiApi {
         return response.data['list'] ?? [];
       }
     } catch (e, stackTrace) {
-      debugPrint('Search Error: $e\n$stackTrace');
+      debugPrint('[BangumiApi.search] Exception: $e\n$stackTrace');
+    }
+    return [];
+  }
+
+  static Future<List<Map<String, dynamic>>> getSubjectsByTag(String tag, {int type = 2, int page = 1}) async {
+    List<Map<String, dynamic>> results = [];
+    try {
+      final String typeStr = type == 1 ? 'book' : 'anime';
+      final response = await _dio.get(
+        '${_ApiConfig.webBase}/$typeStr/tag/${Uri.encodeComponent(tag)}?page=$page',
+        options: Options(responseType: ResponseType.bytes),
+      );
+
+      if (response.statusCode == 200) {
+        final decodedBody = utf8.decode(response.data);
+        final document = parser.parse(decodedBody);
+        final ul = document.getElementById('browserItemList');
+        
+        if (ul != null) {
+          final items = ul.getElementsByClassName('item').take(24); 
+          for (var item in items) {
+            final aTag = item.querySelector('a.l');
+            if (aTag == null) continue;
+
+            final sid = aTag.attributes['href']?.split('/').last ?? '';
+            final name = aTag.text.trim();
+
+            final scoreTag = item.querySelector('small.fade');
+            final score = scoreTag != null ? scoreTag.text.trim() : '暂无数据';
+
+            final imgTag = item.querySelector('img');
+            String imgUrl = '';
+            if (imgTag != null && imgTag.attributes.containsKey('src')) {
+              imgUrl = imgTag.attributes['src']!.replaceAll('/s/', '/l/');
+              if (imgUrl.startsWith('//')) imgUrl = 'https:$imgUrl';
+            }
+
+            results.add({
+              'id': int.tryParse(sid) ?? sid,
+              'name': name,
+              'rating': {'score': score},
+              'images': {'large': imgUrl}
+            });
+          }
+        }
+      }
+    } catch (e, stackTrace) {
+      debugPrint('[BangumiApi.getSubjectsByTag] Exception: $e\n$stackTrace');
+    }
+    return results;
+  }
+
+  static Future<List<dynamic>> getCharacterSubjects(int characterId) async {
+    try {
+      final response = await _dio.get('${_ApiConfig.apiBase}/v0/characters/$characterId/subjects');
+      if (response.statusCode == 200) {
+        return response.data ?? [];
+      }
+    } catch (e) {
+      debugPrint('[BangumiApi.getCharacterSubjects] Exception: $e');
+    }
+    return [];
+  }
+
+  static Future<List<dynamic>> getPersonSubjects(int personId) async {
+    try {
+      final response = await _dio.get('${_ApiConfig.apiBase}/v0/persons/$personId/subjects');
+      if (response.statusCode == 200) {
+        return response.data ?? [];
+      }
+    } catch (e) {
+      debugPrint('[BangumiApi.getPersonSubjects] Exception: $e');
     }
     return [];
   }
@@ -32,7 +104,7 @@ class BangumiApi {
         return response.data;
       }
     } catch (e, stackTrace) {
-      debugPrint('Calendar Error: $e\n$stackTrace');
+      debugPrint('[BangumiApi.getCalendar] Exception: $e\n$stackTrace');
     }
     return [];
   }
@@ -69,7 +141,7 @@ class BangumiApi {
             final name = aTag.text.trim();
 
             final scoreTag = item.querySelector('small.fade');
-            final score = scoreTag != null ? scoreTag.text.trim() : '暂无';
+            final score = scoreTag != null ? scoreTag.text.trim() : '暂无数据';
 
             final imgTag = item.querySelector('img');
             String imgUrl = '';
@@ -88,7 +160,7 @@ class BangumiApi {
         }
       }
     } catch (e, stackTrace) {
-      debugPrint('YearTop Error: $e\n$stackTrace');
+      debugPrint('[BangumiApi.getYearTop] Exception: $e\n$stackTrace');
     }
     return results;
   }
@@ -100,7 +172,7 @@ class BangumiApi {
         return response.data;
       }
     } catch (e, stackTrace) {
-      debugPrint('获取详情失败: $e\n$stackTrace');
+      debugPrint('[BangumiApi.getAnimeDetail] Exception: $e\n$stackTrace');
     }
     return null;
   }
@@ -117,11 +189,11 @@ class BangumiApi {
         return response.data;
       }
     } on DioException catch (e) {
-      if (e.response?.statusCode != 404) { // 404 是正常业务逻辑（未收藏）
-        debugPrint('获取收藏状态失败: ${e.message}');
+      if (e.response?.statusCode != 404) { 
+        debugPrint('[BangumiApi.getUserCollection] Request Error: ${e.message}');
       }
     } catch (e, stackTrace) {
-      debugPrint('获取收藏状态未知错误: $e\n$stackTrace');
+      debugPrint('[BangumiApi.getUserCollection] Exception: $e\n$stackTrace');
     }
     return null; 
   }
@@ -134,33 +206,35 @@ class BangumiApi {
         return response.data['data'] ?? [];
       }
     } catch (e, stackTrace) {
-      debugPrint('获取追番/书籍列表失败: $e\n$stackTrace');
+      debugPrint('[BangumiApi.getUserCollectionList] Exception: $e\n$stackTrace');
     }
     return [];
   }
 
+  // ✨ 优化：强制指定 Content-Type 为 application/json，防止部分设备拦截
   static Future<bool> updateCollection(int subjectId, String token, Map<String, dynamic> postData) async {
     if (token.isEmpty) return false;
-
     try {
       final response = await _dio.post(
         '${_ApiConfig.apiBase}/v0/users/-/collections/$subjectId',
         data: postData, 
-        options: Options(headers: {'Authorization': 'Bearer $token'}),
+        options: Options(headers: {
+          'Authorization': 'Bearer $token',
+          'Content-Type': 'application/json'
+        }),
       );
-      
-      // 判断 2xx 的标准商业化写法
       if (response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300) {
         return true;
       } else {
-        debugPrint('同步失败，服务器返回: ${response.statusCode} - ${response.data}');
+        debugPrint('[BangumiApi.updateCollection] Failed: Code ${response.statusCode} - Data: ${response.data}');
       }
     } catch (e, stackTrace) {
-      debugPrint('同步网络异常: $e\n$stackTrace');
+      debugPrint('[BangumiApi.updateCollection] Exception: $e\n$stackTrace');
     }
     return false;
   }
 
+  // 保留稳定的进度同步补偿接口
   static Future<bool> updateEpisodeStatus(int subjectId, String token, int epStatus) async {
     if (token.isEmpty) return false;
     try {
@@ -176,7 +250,7 @@ class BangumiApi {
         return true;
       }
     } catch (e, stackTrace) {
-      debugPrint('更新进度异常: $e\n$stackTrace');
+      debugPrint('[BangumiApi.updateEpisodeStatus] Exception: $e\n$stackTrace');
     }
     return false;
   }
@@ -198,10 +272,10 @@ class BangumiApi {
         if (commentBox != null) {
           final items = commentBox.getElementsByClassName('item').take(10); 
           for (var item in items) {
-            final author = item.querySelector('.text a')?.text.trim() ?? '匿名网友';
+            final author = item.querySelector('.text a')?.text.trim() ?? '网络用户';
             final content = item.querySelector('p')?.text.trim() ?? '';
             
-            String rate = '未打分';
+            String rate = '未评级';
             final starSpan = item.querySelector('.text span.starlight');
             if (starSpan != null) {
               final cls = starSpan.attributes['class'] ?? '';
@@ -222,8 +296,44 @@ class BangumiApi {
         }
       }
     } catch (e, stackTrace) {
-      debugPrint('获取热评失败: $e\n$stackTrace');
+      debugPrint('[BangumiApi.getSubjectComments] Exception: $e\n$stackTrace');
     }
     return comments;
+  }
+
+  static Future<List<dynamic>> getSubjectCharacters(int id) async {
+    try {
+      final response = await _dio.get('${_ApiConfig.apiBase}/v0/subjects/$id/characters');
+      if (response.statusCode == 200) {
+        return response.data ?? [];
+      }
+    } catch (e, stackTrace) {
+      debugPrint('[BangumiApi.getSubjectCharacters] Exception: $e\n$stackTrace');
+    }
+    return [];
+  }
+
+  static Future<List<dynamic>> getSubjectPersons(int id) async {
+    try {
+      final response = await _dio.get('${_ApiConfig.apiBase}/v0/subjects/$id/persons');
+      if (response.statusCode == 200) {
+        return response.data ?? [];
+      }
+    } catch (e, stackTrace) {
+      debugPrint('[BangumiApi.getSubjectPersons] Exception: $e\n$stackTrace');
+    }
+    return [];
+  }
+
+  static Future<List<dynamic>> getSubjectRelations(int id) async {
+    try {
+      final response = await _dio.get('${_ApiConfig.apiBase}/v0/subjects/$id/subjects');
+      if (response.statusCode == 200) {
+        return response.data ?? [];
+      }
+    } catch (e, stackTrace) {
+      debugPrint('[BangumiApi.getSubjectRelations] Exception: $e\n$stackTrace');
+    }
+    return [];
   }
 }
