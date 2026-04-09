@@ -17,7 +17,6 @@ class Anime {
     this.epStatus = 0,
   });
 
-  // ✨ 核心工厂方法：将杂乱的 JSON 字典安全地转换为标准的 Anime 对象
   factory Anime.fromJson(Map<String, dynamic> json) {
     // 兼容普通 API 和个人收藏 API (收藏 API 的实体在 'subject' 字段里)
     final subject = json['subject'] ?? json;
