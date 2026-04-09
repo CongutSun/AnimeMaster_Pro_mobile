@@ -7,6 +7,7 @@ import '../api/bangumi_api.dart';
 import '../api/dio_client.dart';
 import 'magnet_config_page.dart';
 import 'search_page.dart';
+import 'category_result_page.dart';
 
 // 全局统一的链接安全格式化方法
 String _getSecureImageUrl(String url) {
@@ -20,7 +21,7 @@ String _getSecureImageUrl(String url) {
   return cleanUrl;
 }
 
-// 统一的图片容错加载组件，已移除自定义请求头以防止防火墙误拦截
+// 统一的图片容错加载组件，已加入 User-Agent 防止被防火墙或防盗链拦截
 Widget _buildSafeImage({
   required String imageUrl,
   double? width,
@@ -32,11 +33,18 @@ Widget _buildSafeImage({
   if (secureUrl.isEmpty) {
     return errorWidget ?? Container(width: width, height: height, color: Colors.grey.withValues(alpha: 0.2));
   }
+
+  // 模拟标准浏览器的请求头，解决 Release 模式下默认请求头被部分 CDN 拒绝的问题
+  const Map<String, String> headers = {
+    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
+  };
+
   return CachedNetworkImage(
     imageUrl: secureUrl,
     width: width,
     height: height,
     fit: fit,
+    httpHeaders: headers,
     placeholder: (context, url) => Container(width: width, height: height, color: Colors.grey.withValues(alpha: 0.2)),
     errorWidget: (context, url, error) {
       return Image.network(
@@ -44,6 +52,7 @@ Widget _buildSafeImage({
         width: width,
         height: height,
         fit: fit,
+        headers: headers,
         errorBuilder: (context, error, stackTrace) => errorWidget ?? Container(width: width, height: height, color: Colors.grey.withValues(alpha: 0.2), child: const Icon(Icons.broken_image, color: Colors.grey)),
       );
     },
@@ -191,6 +200,7 @@ class _DetailPageState extends State<DetailPage> {
     }
   }
 
+  // 保留用于常规回退的文本搜索
   void _searchByKeyword(String keyword) {
     if (keyword.trim().isEmpty) {
       return;
@@ -198,6 +208,74 @@ class _DetailPageState extends State<DetailPage> {
     Navigator.push(context, MaterialPageRoute(
       builder: (context) => SearchPage(keyword: keyword.trim())
     ));
+  }
+
+  // 精准处理人物卡片点击逻辑，提取 ID 并导航至对应的分类结果页
+  void _handlePersonTap(BuildContext context, dynamic item, bool isCharacter) {
+    String name = item['name'] ?? '';
+    int? id = item['id'];
+
+    if (isCharacter && item['actors'] != null && (item['actors'] as List).isNotEmpty) {
+      var actor = item['actors'][0];
+      String actorName = actor is Map ? (actor['name'] ?? '') : actor.toString();
+      int? actorId = actor is Map ? actor['id'] : null;
+      
+      showDialog(
+        context: context,
+        builder: (ctx) {
+          final isDark = Theme.of(ctx).brightness == Brightness.dark;
+          final buttonColor = isDark ? Colors.blueAccent.shade100 : Colors.blueAccent.shade700;
+
+          return AlertDialog(
+            title: const Text('请选择查看对象', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            content: const Text('您想要查看该角色本身，还是相关的配音演员（声优）？'),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            actions: [
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  if (id != null) {
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => CategoryResultPage(
+                      title: '角色: $name',
+                      searchMode: 'character',
+                      query: id,
+                    )));
+                  } else {
+                    _searchByKeyword(name);
+                  }
+                },
+                child: Text('角色: $name', style: TextStyle(color: buttonColor)),
+              ),
+              TextButton(
+                onPressed: () {
+                  Navigator.pop(ctx);
+                  if (actorId != null) {
+                    Navigator.push(context, MaterialPageRoute(builder: (context) => CategoryResultPage(
+                      title: '声优: $actorName',
+                      searchMode: 'person',
+                      query: actorId,
+                    )));
+                  } else {
+                    _searchByKeyword(actorName);
+                  }
+                },
+                child: Text('声优: $actorName', style: TextStyle(color: buttonColor)),
+              ),
+            ],
+          );
+        }
+      );
+    } else {
+      if (id != null) {
+        Navigator.push(context, MaterialPageRoute(builder: (context) => CategoryResultPage(
+          title: '${isCharacter ? "角色" : "制作人员"}: $name',
+          searchMode: isCharacter ? 'character' : 'person',
+          query: id,
+        )));
+      } else {
+        _searchByKeyword(name);
+      }
+    }
   }
 
   Future<void> _syncToCloud() async {
@@ -246,9 +324,10 @@ class _DetailPageState extends State<DetailPage> {
 
   Widget _buildProgressAdjuster({required String title, required int value, required VoidCallback onMinus, required VoidCallback onPlus}) {
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
-    final primaryIconColor = isDarkMode ? Colors.blue.shade400 : Theme.of(context).primaryColor;
-    final iconColor = isDarkMode ? Colors.green.shade400 : Colors.green;
-    final minusIconColor = value > 0 ? (isDarkMode ? Colors.grey.shade300 : Colors.grey.shade700) : (isDarkMode ? Colors.grey.shade800 : Colors.grey.shade300);
+    
+    final primaryIconColor = isDarkMode ? Colors.blueAccent.shade100 : Colors.blueAccent.shade700;
+    final iconColor = isDarkMode ? Colors.greenAccent.shade100 : Colors.green.shade700;
+    final minusIconColor = value > 0 ? primaryIconColor : Colors.grey;
 
     return Padding(
       padding: const EdgeInsets.only(bottom: 12.0),
@@ -320,7 +399,7 @@ class _DetailPageState extends State<DetailPage> {
     );
   }
 
-  Widget _buildTopHeader(String imageUrl, String cnName, String originalName, ThemeData theme) {
+  Widget _buildTopHeader(String imageUrl, String cnName, String originalName, ThemeData theme, Color highlightOrange) {
     return Stack(
       children: [
         if (imageUrl.isNotEmpty)
@@ -329,9 +408,11 @@ class _DetailPageState extends State<DetailPage> {
           ),
         if (imageUrl.isNotEmpty)
           Positioned.fill(
-            child: BackdropFilter(
-              filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
-              child: Container(color: theme.scaffoldBackgroundColor.withValues(alpha: 0.8)),
+            child: ClipRect(
+              child: BackdropFilter(
+                filter: ImageFilter.blur(sigmaX: 25, sigmaY: 25),
+                child: Container(color: theme.scaffoldBackgroundColor.withValues(alpha: 0.8)),
+              ),
             ),
           ),
         Container(
@@ -364,7 +445,7 @@ class _DetailPageState extends State<DetailPage> {
                       children: [
                         const Icon(Icons.star_rounded, color: Colors.orange, size: 18),
                         const SizedBox(width: 4),
-                        Text('${detailData?['rating']?['score'] ?? '暂无评分'}', style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: Colors.orange)),
+                        Text('${detailData?['rating']?['score'] ?? '暂无评分'}', style: TextStyle(fontSize: 15, fontWeight: FontWeight.bold, color: highlightOrange)),
                       ],
                     ),
                     const SizedBox(height: 6),
@@ -379,7 +460,17 @@ class _DetailPageState extends State<DetailPage> {
                         children: (detailData!['tags'] as List).take(5).map((tag) {
                           String tagName = tag is Map ? tag['name']?.toString() ?? '' : tag.toString();
                           return InkWell(
-                            onTap: () => _searchByKeyword(tagName),
+                            onTap: () {
+                              // 更新标签的导航逻辑，引导至分类结果页
+                              Navigator.push(context, MaterialPageRoute(
+                                builder: (context) => CategoryResultPage(
+                                  title: '标签: $tagName',
+                                  searchMode: 'tag',
+                                  query: tagName,
+                                  searchType: widget.subjectType,
+                                )
+                              ));
+                            },
                             borderRadius: BorderRadius.circular(4),
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -438,7 +529,7 @@ class _DetailPageState extends State<DetailPage> {
     String relation = item['relation'] ?? (isCharacter ? '角色' : '职位');
     
     String avatarUrl = '';
-    // 这里是对先前问题的修复，严格使用大括号包裹逻辑块
+    
     if (item['images'] != null) {
       if (item['images']['grid'] != null) {
         avatarUrl = item['images']['grid'];
@@ -457,7 +548,7 @@ class _DetailPageState extends State<DetailPage> {
     }
 
     return InkWell(
-      onTap: () => _searchByKeyword(name),
+      onTap: () => _handlePersonTap(context, item, isCharacter),
       borderRadius: BorderRadius.circular(8),
       child: Container(
         width: 65,
@@ -762,8 +853,11 @@ class _DetailPageState extends State<DetailPage> {
     final provider = Provider.of<SettingsProvider>(context);
     final theme = Theme.of(context);
     final isDarkMode = theme.brightness == Brightness.dark;
-    final highlightOrange = isDarkMode ? Colors.orange.shade400 : Colors.orange;
-    final highlightBlue = isDarkMode ? Colors.blue.shade400 : Colors.blue;
+    
+    final highlightOrange = isDarkMode ? Colors.orangeAccent.shade100 : Colors.orange.shade700;
+    final highlightBlue = isDarkMode ? Colors.blueAccent.shade100 : Colors.blueAccent.shade700;
+    final activeTabColor = isDarkMode ? Colors.white : Colors.black87;
+    final inactiveTabColor = isDarkMode ? Colors.white54 : Colors.black45;
 
     return Theme(
       data: theme.copyWith(
@@ -784,15 +878,15 @@ class _DetailPageState extends State<DetailPage> {
                   headerSliverBuilder: (context, innerBoxIsScrolled) {
                     return [
                       SliverToBoxAdapter(
-                        child: _buildTopHeader(imageUrl, cnName, originalName, theme),
+                        child: _buildTopHeader(imageUrl, cnName, originalName, theme, highlightOrange),
                       ),
                       SliverPersistentHeader(
                         pinned: true,
                         delegate: _SliverAppBarDelegate(
                           TabBar(
-                            labelColor: theme.primaryColor,
-                            unselectedLabelColor: Colors.grey,
-                            indicatorColor: theme.primaryColor,
+                            labelColor: activeTabColor,
+                            unselectedLabelColor: inactiveTabColor,
+                            indicatorColor: activeTabColor,
                             indicatorWeight: 3,
                             tabs: const [
                               Tab(text: '详情'),

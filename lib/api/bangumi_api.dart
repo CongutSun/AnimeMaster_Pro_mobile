@@ -13,9 +13,10 @@ class _ApiConfig {
 class BangumiApi {
   static final Dio _dio = DioClient().dio;
 
-  static Future<List<dynamic>> search(String keyword, {int type = 2}) async {
+  // 修改部分：增加 start 和 maxResults 参数以支持分页机制
+  static Future<List<dynamic>> search(String keyword, {int type = 2, int start = 0, int maxResults = 25}) async {
     try {
-      final response = await _dio.get('${_ApiConfig.apiBase}/search/subject/${Uri.encodeComponent(keyword)}?type=$type');
+      final response = await _dio.get('${_ApiConfig.apiBase}/search/subject/${Uri.encodeComponent(keyword)}?type=$type&start=$start&max_results=$maxResults');
       if (response.statusCode == 200) {
         return response.data['list'] ?? [];
       }
@@ -211,7 +212,6 @@ class BangumiApi {
     return [];
   }
 
-  // ✨ 优化：强制指定 Content-Type 为 application/json，防止部分设备拦截
   static Future<bool> updateCollection(int subjectId, String token, Map<String, dynamic> postData) async {
     if (token.isEmpty) return false;
     try {
@@ -234,7 +234,6 @@ class BangumiApi {
     return false;
   }
 
-  // 保留稳定的进度同步补偿接口
   static Future<bool> updateEpisodeStatus(int subjectId, String token, int epStatus) async {
     if (token.isEmpty) return false;
     try {
