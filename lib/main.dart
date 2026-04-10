@@ -1,45 +1,34 @@
-import 'dart:io';
-import 'dart:ui';
+import 'dart:io'; 
+import 'dart:ui'; 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
 import 'providers/settings_provider.dart';
 import 'screens/home_page.dart';
 
-// 专业级：收拢 SSL 绕过策略，仅对特定图床域名放行，防止 App 遭受中间人攻击
-class AppHttpOverrides extends HttpOverrides {
+class MyHttpOverrides extends HttpOverrides {
   @override
   HttpClient createHttpClient(SecurityContext? context) {
-    final client = super.createHttpClient(context);
-    client.badCertificateCallback = (X509Certificate cert, String host, int port) {
-      // 仅允许我们已知的、证书可能存在问题的图床域名绕过校验
-      final allowedHosts = ['bgm.tv', 'chii.in', 'lain.bgm.tv'];
-      if (allowedHosts.any((allowed) => host.contains(allowed))) {
-        return true;
-      }
-      return false; // 商业项目中，未知域名必须进行严格的证书校验
-    };
-    return client;
+    return super.createHttpClient(context)
+      // 解决某些自签证书导致的 HTTPS 报错问题
+      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
   }
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 注入受控的 HTTP 全局配置
-  HttpOverrides.global = AppHttpOverrides();
+  // 强制忽略证书错误，并准备在具体的图片库里配置 UA
+  HttpOverrides.global = MyHttpOverrides();
 
-  // 专业级：Flutter 框架层面的异常捕获
   FlutterError.onError = (FlutterErrorDetails details) {
-    // 未来可替换为 Firebase Crashlytics 或 Sentry 上报逻辑
-    debugPrint('[Flutter Framework Error]: ${details.exceptionAsString()}');
+    debugPrint('【Flutter 全局异常拦截】: ${details.exceptionAsString()}');
     FlutterError.presentError(details);
   };
 
-  // 专业级：Dart 异步任务异常捕获
   PlatformDispatcher.instance.onError = (error, stack) {
-    debugPrint('[Dart Async Error]: $error\nStack: $stack');
-    return true; // 阻止应用崩溃退出
+    debugPrint('【Dart 异步异常拦截】: $error\n堆栈: $stack');
+    return true;
   };
 
   runApp(
@@ -47,53 +36,71 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
       ],
-      child: const AnimeApp(),
+      child: const MyApp(),
     ),
   );
 }
 
-class AnimeApp extends StatelessWidget {
-  const AnimeApp({super.key});
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
 
   @override
   Widget build(BuildContext context) {
     return Consumer<SettingsProvider>(
       builder: (context, settings, child) {
         final isDarkMode = settings.themeMode.contains('Dark');
+        // 校验背景图路径是否存在且文件确实存在
+        final hasCustomBg = settings.customBgPath.isNotEmpty && File(settings.customBgPath).existsSync();
 
         return MaterialApp(
           title: '智能追番助手',
           debugShowCheckedModeBanner: false, 
+          
           themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
           
           theme: ThemeData(
             brightness: Brightness.light,
             primaryColor: Colors.blue,
-            scaffoldBackgroundColor: Colors.grey.shade50,
-            appBarTheme: const AppBarTheme(
-              backgroundColor: Colors.white,
+            // 如果有背景，则变为白色的 85% 半透明，呈现毛玻璃透视效果；没有则保持默认纯色
+            scaffoldBackgroundColor: hasCustomBg ? Colors.white.withValues(alpha: 0.85) : Colors.grey.shade50,
+            appBarTheme: AppBarTheme(
+              backgroundColor: hasCustomBg ? Colors.white.withValues(alpha: 0.8) : Colors.white,
               foregroundColor: Colors.black87,
-              elevation: 1,
+              elevation: hasCustomBg ? 0 : 1,
             ),
           ),
           
           darkTheme: ThemeData(
             brightness: Brightness.dark,
-            scaffoldBackgroundColor: const Color(0xFF121212),
-            cardColor: const Color(0xFF1E1E1E),
-            appBarTheme: const AppBarTheme(
-              backgroundColor: Color(0xFF1E1E1E),
-              elevation: 1,
+            // 深色模式同理，变为深灰色的 85% 半透明
+            scaffoldBackgroundColor: hasCustomBg ? const Color(0xFF121212).withValues(alpha: 0.85) : const Color(0xFF121212),
+            cardColor: hasCustomBg ? const Color(0xFF1E1E1E).withValues(alpha: 0.6) : const Color(0xFF1E1E1E),
+            appBarTheme: AppBarTheme(
+              backgroundColor: hasCustomBg ? const Color(0xFF1E1E1E).withValues(alpha: 0.8) : const Color(0xFF1E1E1E),
+              elevation: hasCustomBg ? 0 : 1,
             ),
           ),
           
           builder: (context, child) {
-            // 锁定字体大小，防止用户系统字体设置导致 UI 错位
             return MediaQuery(
               data: MediaQuery.of(context).copyWith(
                 textScaler: TextScaler.noScaling, 
               ),
-              child: child!,
+              child: Stack(
+                children: [
+                  // 1. 最底层的全局自定义背景图
+                  if (hasCustomBg)
+                    Positioned.fill(
+                      child: Image.file(
+                        File(settings.customBgPath),
+                        fit: BoxFit.cover,
+                      ),
+                    ),
+                  
+                  // 2. 整个 App 的路由栈内容覆盖在背景之上
+                  child!,
+                ],
+              ),
             );
           },
           
@@ -131,7 +138,7 @@ class _UpdateCheckWrapperState extends State<UpdateCheckWrapper> {
         _showUpdateDialog();
       }
     } catch (e) {
-      debugPrint('[Update Checker Error]: $e');
+      debugPrint("检查更新失败: $e");
     }
   }
 
@@ -162,7 +169,7 @@ class _UpdateCheckWrapperState extends State<UpdateCheckWrapper> {
                   Navigator.of(context).pop();
                   _showRestartDialog();
                 } catch (e) {
-                  debugPrint('[Update Process Error]: $e');
+                  debugPrint("更新出错: $e");
                   if (!mounted) return;
                   Navigator.of(context).pop();
                 }
@@ -184,7 +191,7 @@ class _UpdateCheckWrapperState extends State<UpdateCheckWrapper> {
             children: [
               CircularProgressIndicator(),
               SizedBox(width: 20),
-              Text('正在下载更新，请稍候...'),
+              Text("正在下载更新，请稍候..."),
             ],
           ),
         );

@@ -29,16 +29,15 @@ Widget _buildSafeImage({
     height: height,
     fit: fit,
     httpHeaders: headers,
+    // 注入专业的缓存管理器，热更新后生效
+    cacheManager: AppImageCacheManager.instance,
+    // 限制解码到内存的图片尺寸，防止内存溢出导致图片被频繁清理而闪烁
+    memCacheWidth: width != null ? (width * 3).toInt() : null, 
+    memCacheHeight: height != null ? (height * 3).toInt() : null,
+    
     placeholder: (context, url) => Container(width: width, height: height, color: Colors.grey.withValues(alpha: 0.2)),
     errorWidget: (context, url, error) {
-      return Image.network(
-        secureUrl,
-        width: width,
-        height: height,
-        fit: fit,
-        headers: headers,
-        errorBuilder: (context, error, stackTrace) => errorWidget ?? Container(width: width, height: height, color: Colors.grey.withValues(alpha: 0.2), child: const Icon(Icons.broken_image, color: Colors.grey)),
-      );
+      return errorWidget ?? Container(width: width, height: height, color: Colors.grey.withValues(alpha: 0.2), child: const Icon(Icons.broken_image, color: Colors.grey));
     },
   );
 }
@@ -356,7 +355,6 @@ class _DetailPageState extends State<DetailPage> {
     );
   }
 
-  // 修复：传入 highlightBlue，让标签颜色在深色模式下自动适配为高亮浅蓝，解决显示不清的问题
   Widget _buildTopHeader(String imageUrl, String cnName, String originalName, ThemeData theme, Color highlightOrange, Color highlightBlue) {
     return Stack(
       children: [
@@ -432,7 +430,6 @@ class _DetailPageState extends State<DetailPage> {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                // 使用 highlightBlue 替代 theme.primaryColor，增强深色模式下的对比度
                                 color: highlightBlue.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(4),
                                 border: Border.all(color: highlightBlue.withValues(alpha: 0.3)),
@@ -838,7 +835,6 @@ class _DetailPageState extends State<DetailPage> {
                   headerSliverBuilder: (context, innerBoxIsScrolled) {
                     return [
                       SliverToBoxAdapter(
-                        // 传入 highlightBlue，让标签在深色和浅色模式下都能自适应高亮
                         child: _buildTopHeader(imageUrl, cnName, originalName, theme, highlightOrange, highlightBlue),
                       ),
                       SliverPersistentHeader(

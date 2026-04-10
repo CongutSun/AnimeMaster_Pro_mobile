@@ -13,6 +13,13 @@ class _ApiConfig {
 class BangumiApi {
   static final Dio _dio = DioClient().dio;
 
+  // --- 新增：内存级数据缓存池，提升热启动流畅度 ---
+  static final Map<int, Map<String, dynamic>> _animeDetailCache = {};
+  static final Map<int, List<dynamic>> _charactersCache = {};
+  static final Map<int, List<dynamic>> _personsCache = {};
+  static final Map<int, List<dynamic>> _relationsCache = {};
+  static final Map<int, List<Map<String, String>>> _commentsCache = {};
+
   static Future<List<dynamic>> search(String keyword, {int type = 2, int start = 0, int maxResults = 25}) async {
     try {
       final response = await _dio.get('${_ApiConfig.apiBase}/search/subject/${Uri.encodeComponent(keyword)}?type=$type&start=$start&max_results=$maxResults');
@@ -132,7 +139,6 @@ class BangumiApi {
         final ul = document.getElementById('browserItemList');
         
         if (ul != null) {
-          // 修改项：将此处的截取长度由 8 修改为 10，以满足展示年度前十的需求
           final items = ul.getElementsByClassName('item').take(10);
           for (var item in items) {
             final aTag = item.querySelector('a.l');
@@ -167,9 +173,11 @@ class BangumiApi {
   }
 
   static Future<Map<String, dynamic>?> getAnimeDetail(int id) async {
+    if (_animeDetailCache.containsKey(id)) return _animeDetailCache[id]; // 命中缓存直出
     try {
       final response = await _dio.get('${_ApiConfig.apiBase}/v0/subjects/$id');
       if (response.statusCode == 200) {
+        _animeDetailCache[id] = response.data; // 写入缓存
         return response.data;
       }
     } catch (e, stackTrace) {
@@ -255,6 +263,7 @@ class BangumiApi {
   }
 
   static Future<List<Map<String, String>>> getSubjectComments(int id) async {
+    if (_commentsCache.containsKey(id)) return _commentsCache[id]!;
     List<Map<String, String>> comments = [];
 
     try {
@@ -269,7 +278,6 @@ class BangumiApi {
         
         final commentBox = document.getElementById('comment_box');
         if (commentBox != null) {
-          // 修改项：移除了 .take(10) 的截断限制，以解析该页面上所有可用的吐槽数据
           final items = commentBox.getElementsByClassName('item'); 
           for (var item in items) {
             final author = item.querySelector('.text a')?.text.trim() ?? '网络用户';
@@ -298,14 +306,18 @@ class BangumiApi {
     } catch (e, stackTrace) {
       debugPrint('[BangumiApi.getSubjectComments] Exception: $e\n$stackTrace');
     }
+    
+    if (comments.isNotEmpty) _commentsCache[id] = comments;
     return comments;
   }
 
   static Future<List<dynamic>> getSubjectCharacters(int id) async {
+    if (_charactersCache.containsKey(id)) return _charactersCache[id]!;
     try {
       final response = await _dio.get('${_ApiConfig.apiBase}/v0/subjects/$id/characters');
       if (response.statusCode == 200) {
-        return response.data ?? [];
+        _charactersCache[id] = response.data ?? [];
+        return _charactersCache[id]!;
       }
     } catch (e, stackTrace) {
       debugPrint('[BangumiApi.getSubjectCharacters] Exception: $e\n$stackTrace');
@@ -314,10 +326,12 @@ class BangumiApi {
   }
 
   static Future<List<dynamic>> getSubjectPersons(int id) async {
+    if (_personsCache.containsKey(id)) return _personsCache[id]!;
     try {
       final response = await _dio.get('${_ApiConfig.apiBase}/v0/subjects/$id/persons');
       if (response.statusCode == 200) {
-        return response.data ?? [];
+        _personsCache[id] = response.data ?? [];
+        return _personsCache[id]!;
       }
     } catch (e, stackTrace) {
       debugPrint('[BangumiApi.getSubjectPersons] Exception: $e\n$stackTrace');
@@ -326,10 +340,12 @@ class BangumiApi {
   }
 
   static Future<List<dynamic>> getSubjectRelations(int id) async {
+    if (_relationsCache.containsKey(id)) return _relationsCache[id]!;
     try {
       final response = await _dio.get('${_ApiConfig.apiBase}/v0/subjects/$id/subjects');
       if (response.statusCode == 200) {
-        return response.data ?? [];
+        _relationsCache[id] = response.data ?? [];
+        return _relationsCache[id]!;
       }
     } catch (e, stackTrace) {
       debugPrint('[BangumiApi.getSubjectRelations] Exception: $e\n$stackTrace');
