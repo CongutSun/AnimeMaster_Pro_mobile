@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../api/bangumi_api.dart';
+import '../utils/image_request.dart';
 import '../models/anime.dart';
 import 'detail_page.dart';
 
@@ -19,30 +20,17 @@ class _SearchPageState extends State<SearchPage> {
   bool isLoadingMore = false;
   bool hasMore = true;
 
-  int currentSubjectType = 2; // 2为番剧，1为书籍
+  int currentSubjectType = 2; 
   int currentStart = 0;
-  final int maxResults = 25; // 每次加载数量，匹配 Bangumi 默认规格
+  final int maxResults = 25; 
 
   final ScrollController _scrollController = ScrollController();
-
-  // 统一的链接安全格式化方法
-  String _getSecureImageUrl(String url) {
-    if (url.isEmpty) return '';
-    String cleanUrl = url.trim();
-    if (cleanUrl.startsWith('http://')) {
-      return cleanUrl.replaceFirst('http://', 'https://');
-    } else if (cleanUrl.startsWith('//')) {
-      return 'https:$cleanUrl';
-    }
-    return cleanUrl;
-  }
 
   @override
   void initState() {
     super.initState();
     _performSearch();
     
-    // 监听列表滚动，当滑动到距离底部小于200像素时触发加载下一页
     _scrollController.addListener(() {
       if (_scrollController.position.pixels >= _scrollController.position.maxScrollExtent - 200) {
         _loadMore();
@@ -141,7 +129,7 @@ class _SearchPageState extends State<SearchPage> {
               borderRadius: BorderRadius.circular(8),
               isSelected: [currentSubjectType == 2, currentSubjectType == 1],
               onPressed: (index) {
-                if (isLoading) return; // 防止重复触发
+                if (isLoading) return; 
                 setState(() => currentSubjectType = index == 0 ? 2 : 1);
                 _performSearch();
               },
@@ -166,29 +154,25 @@ class _SearchPageState extends State<SearchPage> {
               : ListView.builder(
                   controller: _scrollController,
                   padding: const EdgeInsets.all(16.0),
-                  // 将列表长度加1，以便在底部渲染加载状态指示器
                   itemCount: searchResults.length + 1,
                   itemBuilder: (context, index) {
                     if (index == searchResults.length) {
                       return _buildProgressIndicator();
                     }
                     final anime = searchResults[index];
-                    final String secureUrl = _getSecureImageUrl(anime.imageUrl);
+                    final String secureUrl = normalizeImageUrl(anime.imageUrl);
                     
                     return ListTile(
                       contentPadding: const EdgeInsets.symmetric(vertical: 8.0),
                       leading: secureUrl.isNotEmpty
                           ? ClipRRect(
                               borderRadius: BorderRadius.circular(4),
-                              // 修复部分：采用 CachedNetworkImage 并配置模拟浏览器的 User-Agent
                               child: CachedNetworkImage(
                                 imageUrl: secureUrl,
                                 width: 50,
                                 height: 70,
                                 fit: BoxFit.cover,
-                                httpHeaders: const {
-                                  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
-                                },
+                                httpHeaders: buildImageHeaders(secureUrl),
                                 placeholder: (context, url) => Container(width: 50, height: 70, color: Colors.grey.withValues(alpha: 0.2)),
                                 errorWidget: (context, url, error) => Container(width: 50, height: 70, color: Colors.grey.withValues(alpha: 0.2), child: const Icon(Icons.broken_image, color: Colors.grey)),
                               ),

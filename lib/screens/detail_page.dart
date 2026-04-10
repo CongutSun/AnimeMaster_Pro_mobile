@@ -8,20 +8,8 @@ import '../api/dio_client.dart';
 import 'magnet_config_page.dart';
 import 'search_page.dart';
 import 'category_result_page.dart';
+import '../utils/image_request.dart';
 
-// 全局统一的链接安全格式化方法
-String _getSecureImageUrl(String url) {
-  if (url.isEmpty) return '';
-  String cleanUrl = url.trim();
-  if (cleanUrl.startsWith('http://')) {
-    return cleanUrl.replaceFirst('http://', 'https://');
-  } else if (cleanUrl.startsWith('//')) {
-    return 'https:$cleanUrl';
-  }
-  return cleanUrl;
-}
-
-// 统一的图片容错加载组件，已加入 User-Agent 防止被防火墙或防盗链拦截
 Widget _buildSafeImage({
   required String imageUrl,
   double? width,
@@ -29,15 +17,12 @@ Widget _buildSafeImage({
   BoxFit fit = BoxFit.cover,
   Widget? errorWidget,
 }) {
-  final secureUrl = _getSecureImageUrl(imageUrl);
+  final secureUrl = normalizeImageUrl(imageUrl);
   if (secureUrl.isEmpty) {
     return errorWidget ?? Container(width: width, height: height, color: Colors.grey.withValues(alpha: 0.2));
   }
 
-  // 模拟标准浏览器的请求头，解决 Release 模式下默认请求头被部分 CDN 拒绝的问题
-  const Map<String, String> headers = {
-    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/114.0.0.0 Safari/537.36'
-  };
+  final headers = buildImageHeaders(secureUrl);
 
   return CachedNetworkImage(
     imageUrl: secureUrl,
@@ -200,7 +185,6 @@ class _DetailPageState extends State<DetailPage> {
     }
   }
 
-  // 保留用于常规回退的文本搜索
   void _searchByKeyword(String keyword) {
     if (keyword.trim().isEmpty) {
       return;
@@ -210,7 +194,6 @@ class _DetailPageState extends State<DetailPage> {
     ));
   }
 
-  // 精准处理人物卡片点击逻辑，提取 ID 并导航至对应的分类结果页
   void _handlePersonTap(BuildContext context, dynamic item, bool isCharacter) {
     String name = item['name'] ?? '';
     int? id = item['id'];
@@ -461,7 +444,6 @@ class _DetailPageState extends State<DetailPage> {
                           String tagName = tag is Map ? tag['name']?.toString() ?? '' : tag.toString();
                           return InkWell(
                             onTap: () {
-                              // 更新标签的导航逻辑，引导至分类结果页
                               Navigator.push(context, MaterialPageRoute(
                                 builder: (context) => CategoryResultPage(
                                   title: '标签: $tagName',
@@ -494,11 +476,13 @@ class _DetailPageState extends State<DetailPage> {
     );
   }
 
+  // 修复：新增 listHeight 参数并将其应用到 SizedBox 高度上
   Widget _buildCompactHorizontalList({
     required BuildContext context,
     required String title,
     required List<dynamic> items,
     required Widget Function(BuildContext, dynamic) itemBuilder,
+    double listHeight = 105, 
   }) {
     if (items.isEmpty) {
       return const SizedBox.shrink();
@@ -512,7 +496,7 @@ class _DetailPageState extends State<DetailPage> {
           child: Text(title, style: const TextStyle(fontSize: 15, fontWeight: FontWeight.bold)),
         ),
         SizedBox(
-          height: 105,
+          height: listHeight,
           child: ListView.builder(
             scrollDirection: Axis.horizontal,
             padding: const EdgeInsets.symmetric(horizontal: 12.0),
@@ -675,10 +659,12 @@ class _DetailPageState extends State<DetailPage> {
             items: staffData,
             itemBuilder: (ctx, item) => _buildPersonCard(ctx, item, false),
           ),
+          // 修复：单独为关联条目指派了 130 的高度，完美容纳图片和双行文字
           _buildCompactHorizontalList(
             context: context,
             title: '关联条目',
             items: relatedData,
+            listHeight: 130, 
             itemBuilder: (ctx, item) => _buildRelatedCard(ctx, item),
           ),
         ],

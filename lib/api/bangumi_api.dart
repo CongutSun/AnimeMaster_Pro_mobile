@@ -13,7 +13,6 @@ class _ApiConfig {
 class BangumiApi {
   static final Dio _dio = DioClient().dio;
 
-  // 修改部分：增加 start 和 maxResults 参数以支持分页机制
   static Future<List<dynamic>> search(String keyword, {int type = 2, int start = 0, int maxResults = 25}) async {
     try {
       final response = await _dio.get('${_ApiConfig.apiBase}/search/subject/${Uri.encodeComponent(keyword)}?type=$type&start=$start&max_results=$maxResults');
@@ -133,7 +132,8 @@ class BangumiApi {
         final ul = document.getElementById('browserItemList');
         
         if (ul != null) {
-          final items = ul.getElementsByClassName('item').take(8);
+          // 修改项：将此处的截取长度由 8 修改为 10，以满足展示年度前十的需求
+          final items = ul.getElementsByClassName('item').take(10);
           for (var item in items) {
             final aTag = item.querySelector('a.l');
             if (aTag == null) continue;
@@ -269,7 +269,8 @@ class BangumiApi {
         
         final commentBox = document.getElementById('comment_box');
         if (commentBox != null) {
-          final items = commentBox.getElementsByClassName('item').take(10); 
+          // 修改项：移除了 .take(10) 的截断限制，以解析该页面上所有可用的吐槽数据
+          final items = commentBox.getElementsByClassName('item'); 
           for (var item in items) {
             final author = item.querySelector('.text a')?.text.trim() ?? '网络用户';
             final content = item.querySelector('p')?.text.trim() ?? '';

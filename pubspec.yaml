@@ -36,7 +36,7 @@ dependencies:
   cupertino_icons: ^1.0.8
   http: ^1.6.0
   html: ^0.15.6
-  webfeed: ^0.7.0
+  dart_rss: 3.0.3
   shared_preferences: ^2.5.5
   provider: ^6.1.5+1
   dio: ^5.9.2
@@ -47,7 +47,7 @@ dependencies:
   shorebird_code_push: ^2.0.5
   cached_network_image: ^3.4.1
   # 新增的依赖：用于安全存储，解决代码中引用的问题
-  flutter_secure_storage: ^9.0.0
+  flutter_secure_storage: ^10.0.0
 
 dev_dependencies:
   flutter_test:

@@ -2,11 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart'; 
 import '../models/anime.dart';
 import '../screens/detail_page.dart';
-
-const Map<String, String> bgmHttpHeaders = {
-  'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-  'Referer': 'https://bgm.tv/',
-};
+import '../utils/image_request.dart';
 
 class AnimeCard extends StatelessWidget {
   final Anime anime;
@@ -16,7 +12,6 @@ class AnimeCard extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // 智能获取当前是深色还是浅色模式，用于适配骨架屏底色
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
     final placeholderColor = isDarkMode ? Colors.grey.shade800 : Colors.grey.shade200;
 
@@ -35,7 +30,6 @@ class AnimeCard extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // 1. 图片区域：充满剩余空间，绝对对齐
           Expanded(
             child: Container(
               width: double.infinity,
@@ -48,10 +42,10 @@ class AnimeCard extends StatelessWidget {
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(8),
                 child: CachedNetworkImage(
-                  imageUrl: anime.imageUrl,
+                  imageUrl: normalizeImageUrl(anime.imageUrl),
                   fit: BoxFit.cover,
                   fadeInDuration: const Duration(milliseconds: 300),
-                  httpHeaders: bgmHttpHeaders, 
+                  httpHeaders: buildImageHeaders(anime.imageUrl), 
                   
                   placeholder: (context, url) => Container(
                     color: placeholderColor,
@@ -60,7 +54,6 @@ class AnimeCard extends StatelessWidget {
                     ),
                   ),
                   
-                  // ✨ 错误图：即使网络断开或图片被墙，也不会引发红屏崩溃，而是显示优雅的破损图标
                   errorWidget: (context, url, error) => Container(
                     color: placeholderColor,
                     child: const Center(
@@ -72,29 +65,37 @@ class AnimeCard extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 8),
-          
-          // 2. 文字区域：固定高度，防止把上面的图片往上顶
+          // 修复：增加了底部文字区域的固定高度，完美容纳两行文本，解决 1px 溢出问题
           SizedBox(
-            height: isTop ? 54 : 36,
+            height: isTop ? 64 : 46,
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
                   anime.nameCn.isNotEmpty ? anime.nameCn : anime.name,
-                  style: const TextStyle(fontSize: 13, fontWeight: FontWeight.bold),
-                  maxLines: 2,
+                  maxLines: 1,
                   overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13),
                 ),
-                if (isTop && (double.tryParse(anime.score) ?? 0) > 0) ...[
-                  const SizedBox(height: 4),
+                const SizedBox(height: 2),
+                if (isTop && anime.score.isNotEmpty)
                   Row(
                     children: [
-                      const Icon(Icons.star, color: Colors.amber, size: 14),
+                      const Icon(Icons.star, size: 12, color: Colors.orange),
                       const SizedBox(width: 4),
-                      Text(anime.score, style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                      Text(
+                        anime.score,
+                        style: const TextStyle(fontSize: 11, color: Colors.orange, fontWeight: FontWeight.bold),
+                      ),
                     ],
                   )
-                ]
+                else
+                  Text(
+                    anime.name,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    style: const TextStyle(fontSize: 11, color: Colors.grey),
+                  ),
               ],
             ),
           ),

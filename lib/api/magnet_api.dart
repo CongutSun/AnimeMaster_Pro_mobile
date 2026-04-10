@@ -1,8 +1,8 @@
 import 'dart:convert';
 import 'package:dio/dio.dart';
-import 'package:webfeed/webfeed.dart';
+import 'package:dart_rss/dart_rss.dart'; // 修复：使用最新的 dart_rss 替换废弃的 webfeed
 import 'package:flutter/foundation.dart';
-import 'dio_client.dart'; // ✨ 引入单例
+import 'dio_client.dart'; 
 
 class MagnetApi {
   static final Dio _dio = DioClient().dio;
@@ -30,14 +30,17 @@ class MagnetApi {
           final decodedBody = utf8.decode(response.data);
           final feed = RssFeed.parse(decodedBody);
           
-          for (var item in feed.items ?? []) {
+          for (var item in feed.items) {
             String title = item.title ?? '未知资源文件';
             
+            // 过滤逻辑
             if (mustInclude.isNotEmpty && !title.toLowerCase().contains(mustInclude.toLowerCase())) continue;
             if (quality.isNotEmpty && !title.toLowerCase().contains(quality.toLowerCase())) continue;
             if (exclude.isNotEmpty && title.toLowerCase().contains(exclude.toLowerCase())) continue;
 
             String magnet = '';
+            
+            // 提取磁力链接
             if (item.enclosure != null && item.enclosure!.url != null) {
               magnet = item.enclosure!.url!;
             } else if (item.link != null && item.link!.startsWith('magnet:')) {
