@@ -13,12 +13,21 @@ class _ApiConfig {
 class BangumiApi {
   static final Dio _dio = DioClient().dio;
 
-  // --- 新增：内存级数据缓存池，提升热启动流畅度 ---
   static final Map<int, Map<String, dynamic>> _animeDetailCache = {};
   static final Map<int, List<dynamic>> _charactersCache = {};
   static final Map<int, List<dynamic>> _personsCache = {};
   static final Map<int, List<dynamic>> _relationsCache = {};
   static final Map<int, List<Map<String, String>>> _commentsCache = {};
+
+  /// 缓存清理策略，防止内存持续膨胀
+  static void _trimCache(Map cache, {int maxSize = 50}) {
+    if (cache.length > maxSize) {
+      final keysToRemove = cache.keys.take(cache.length - maxSize).toList();
+      for (var key in keysToRemove) {
+        cache.remove(key);
+      }
+    }
+  }
 
   static Future<List<dynamic>> search(String keyword, {int type = 2, int start = 0, int maxResults = 25}) async {
     try {
@@ -26,8 +35,8 @@ class BangumiApi {
       if (response.statusCode == 200) {
         return response.data['list'] ?? [];
       }
-    } catch (e, stackTrace) {
-      debugPrint('[BangumiApi.search] Exception: $e\n$stackTrace');
+    } catch (e) {
+      debugPrint('[BangumiApi.search] Exception: $e');
     }
     return [];
   }
@@ -74,8 +83,8 @@ class BangumiApi {
           }
         }
       }
-    } catch (e, stackTrace) {
-      debugPrint('[BangumiApi.getSubjectsByTag] Exception: $e\n$stackTrace');
+    } catch (e) {
+      debugPrint('[BangumiApi.getSubjectsByTag] Exception: $e');
     }
     return results;
   }
@@ -108,10 +117,10 @@ class BangumiApi {
     try {
       final response = await _dio.get('${_ApiConfig.apiBase}/calendar');
       if (response.statusCode == 200) {
-        return response.data;
+        return response.data is List ? response.data : [];
       }
-    } catch (e, stackTrace) {
-      debugPrint('[BangumiApi.getCalendar] Exception: $e\n$stackTrace');
+    } catch (e) {
+      debugPrint('[BangumiApi.getCalendar] Exception: $e');
     }
     return [];
   }
@@ -166,43 +175,39 @@ class BangumiApi {
           }
         }
       }
-    } catch (e, stackTrace) {
-      debugPrint('[BangumiApi.getYearTop] Exception: $e\n$stackTrace');
+    } catch (e) {
+      debugPrint('[BangumiApi.getYearTop] Exception: $e');
     }
     return results;
   }
 
   static Future<Map<String, dynamic>?> getAnimeDetail(int id) async {
-    if (_animeDetailCache.containsKey(id)) return _animeDetailCache[id]; // 命中缓存直出
+    if (_animeDetailCache.containsKey(id)) return _animeDetailCache[id]; 
     try {
       final response = await _dio.get('${_ApiConfig.apiBase}/v0/subjects/$id');
-      if (response.statusCode == 200) {
-        _animeDetailCache[id] = response.data; // 写入缓存
+      if (response.statusCode == 200 && response.data is Map) {
+        _animeDetailCache[id] = response.data;
+        _trimCache(_animeDetailCache);
         return response.data;
       }
-    } catch (e, stackTrace) {
-      debugPrint('[BangumiApi.getAnimeDetail] Exception: $e\n$stackTrace');
+    } catch (e) {
+      debugPrint('[BangumiApi.getAnimeDetail] Exception: $e');
     }
     return null;
   }
 
   static Future<Map<String, dynamic>?> getUserCollection(int subjectId, String username, String token) async {
     if (username.isEmpty || token.isEmpty) return null;
-    
     try {
       final response = await _dio.get(
         '${_ApiConfig.apiBase}/v0/users/$username/collections/$subjectId',
         options: Options(headers: {'Authorization': 'Bearer $token'}),
       );
-      if (response.statusCode == 200) {
+      if (response.statusCode == 200 && response.data is Map) {
         return response.data;
       }
-    } on DioException catch (e) {
-      if (e.response?.statusCode != 404) { 
-        debugPrint('[BangumiApi.getUserCollection] Request Error: ${e.message}');
-      }
-    } catch (e, stackTrace) {
-      debugPrint('[BangumiApi.getUserCollection] Exception: $e\n$stackTrace');
+    } catch (e) {
+      debugPrint('[BangumiApi.getUserCollection] Exception: $e');
     }
     return null; 
   }
@@ -211,11 +216,11 @@ class BangumiApi {
     if (username.isEmpty) return [];
     try {
       final response = await _dio.get('${_ApiConfig.apiBase}/v0/users/$username/collections?subject_type=$subjectType&type=$type&limit=100');
-      if (response.statusCode == 200) {
-        return response.data['data'] ?? [];
+      if (response.statusCode == 200 && response.data is Map) {
+        return response.data['data'] is List ? response.data['data'] : [];
       }
-    } catch (e, stackTrace) {
-      debugPrint('[BangumiApi.getUserCollectionList] Exception: $e\n$stackTrace');
+    } catch (e) {
+      debugPrint('[BangumiApi.getUserCollectionList] Exception: $e');
     }
     return [];
   }
@@ -233,11 +238,9 @@ class BangumiApi {
       );
       if (response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300) {
         return true;
-      } else {
-        debugPrint('[BangumiApi.updateCollection] Failed: Code ${response.statusCode} - Data: ${response.data}');
       }
-    } catch (e, stackTrace) {
-      debugPrint('[BangumiApi.updateCollection] Exception: $e\n$stackTrace');
+    } catch (e) {
+      debugPrint('[BangumiApi.updateCollection] Exception: $e');
     }
     return false;
   }
@@ -256,8 +259,8 @@ class BangumiApi {
       if (response.statusCode != null && response.statusCode! >= 200 && response.statusCode! < 300) {
         return true;
       }
-    } catch (e, stackTrace) {
-      debugPrint('[BangumiApi.updateEpisodeStatus] Exception: $e\n$stackTrace');
+    } catch (e) {
+      debugPrint('[BangumiApi.updateEpisodeStatus] Exception: $e');
     }
     return false;
   }
@@ -303,11 +306,14 @@ class BangumiApi {
           }
         }
       }
-    } catch (e, stackTrace) {
-      debugPrint('[BangumiApi.getSubjectComments] Exception: $e\n$stackTrace');
+    } catch (e) {
+      debugPrint('[BangumiApi.getSubjectComments] Exception: $e');
     }
     
-    if (comments.isNotEmpty) _commentsCache[id] = comments;
+    if (comments.isNotEmpty) {
+      _commentsCache[id] = comments;
+      _trimCache(_commentsCache);
+    }
     return comments;
   }
 
@@ -315,12 +321,13 @@ class BangumiApi {
     if (_charactersCache.containsKey(id)) return _charactersCache[id]!;
     try {
       final response = await _dio.get('${_ApiConfig.apiBase}/v0/subjects/$id/characters');
-      if (response.statusCode == 200) {
-        _charactersCache[id] = response.data ?? [];
+      if (response.statusCode == 200 && response.data is List) {
+        _charactersCache[id] = response.data;
+        _trimCache(_charactersCache);
         return _charactersCache[id]!;
       }
-    } catch (e, stackTrace) {
-      debugPrint('[BangumiApi.getSubjectCharacters] Exception: $e\n$stackTrace');
+    } catch (e) {
+      debugPrint('[BangumiApi.getSubjectCharacters] Exception: $e');
     }
     return [];
   }
@@ -329,12 +336,13 @@ class BangumiApi {
     if (_personsCache.containsKey(id)) return _personsCache[id]!;
     try {
       final response = await _dio.get('${_ApiConfig.apiBase}/v0/subjects/$id/persons');
-      if (response.statusCode == 200) {
-        _personsCache[id] = response.data ?? [];
+      if (response.statusCode == 200 && response.data is List) {
+        _personsCache[id] = response.data;
+        _trimCache(_personsCache);
         return _personsCache[id]!;
       }
-    } catch (e, stackTrace) {
-      debugPrint('[BangumiApi.getSubjectPersons] Exception: $e\n$stackTrace');
+    } catch (e) {
+      debugPrint('[BangumiApi.getSubjectPersons] Exception: $e');
     }
     return [];
   }
@@ -343,12 +351,13 @@ class BangumiApi {
     if (_relationsCache.containsKey(id)) return _relationsCache[id]!;
     try {
       final response = await _dio.get('${_ApiConfig.apiBase}/v0/subjects/$id/subjects');
-      if (response.statusCode == 200) {
-        _relationsCache[id] = response.data ?? [];
+      if (response.statusCode == 200 && response.data is List) {
+        _relationsCache[id] = response.data;
+        _trimCache(_relationsCache);
         return _relationsCache[id]!;
       }
-    } catch (e, stackTrace) {
-      debugPrint('[BangumiApi.getSubjectRelations] Exception: $e\n$stackTrace');
+    } catch (e) {
+      debugPrint('[BangumiApi.getSubjectRelations] Exception: $e');
     }
     return [];
   }

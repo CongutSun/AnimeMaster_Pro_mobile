@@ -29,9 +29,7 @@ Widget _buildSafeImage({
     height: height,
     fit: fit,
     httpHeaders: headers,
-    // 注入专业的缓存管理器，热更新后生效
     cacheManager: AppImageCacheManager.instance,
-    // 限制解码到内存的图片尺寸，防止内存溢出导致图片被频繁清理而闪烁
     memCacheWidth: width != null ? (width * 3).toInt() : null, 
     memCacheHeight: height != null ? (height * 3).toInt() : null,
     
@@ -106,11 +104,16 @@ class _DetailPageState extends State<DetailPage> {
       BangumiApi.getSubjectRelations(widget.animeId),
     ]);
 
-    final data = results[0] as Map<String, dynamic>?;
-    final comments = results[1] as List<Map<String, String>>;
-    final chars = results[2] as List<dynamic>;
-    final persons = results[3] as List<dynamic>;
-    final related = results[4] as List<dynamic>;
+    // 修复点：安全的类型判断及回退值处理
+    final data = results[0] is Map ? Map<String, dynamic>.from(results[0] as Map) : null;
+    
+    final comments = results[1] is List 
+        ? (results[1] as List).whereType<Map>().map((e) => Map<String, String>.from(e)).toList() 
+        : <Map<String, String>>[];
+        
+    final chars = results[2] is List ? results[2] as List : [];
+    final persons = results[3] is List ? results[3] as List : [];
+    final related = results[4] is List ? results[4] as List : [];
     
     if (bgmUsername.isNotEmpty && bgmToken.isNotEmpty) {
       final collectionData = await BangumiApi.getUserCollection(widget.animeId, bgmUsername, bgmToken);
@@ -135,8 +138,8 @@ class _DetailPageState extends State<DetailPage> {
           commentController.text = commentStr;
         }
         
-        currentEp = collectionData['ep_status'] ?? 0;
-        currentVol = collectionData['vol_status'] ?? 0;
+        currentEp = collectionData['ep_status'] is int ? collectionData['ep_status'] : 0;
+        currentVol = collectionData['vol_status'] is int ? collectionData['vol_status'] : 0;
       }
     }
 
@@ -162,13 +165,15 @@ class _DetailPageState extends State<DetailPage> {
   }
 
   void _handlePersonTap(BuildContext context, dynamic item, bool isCharacter) {
-    String name = item['name'] ?? '';
-    int? id = item['id'];
+    if (item is! Map) return;
 
-    if (isCharacter && item['actors'] != null && (item['actors'] as List).isNotEmpty) {
+    String name = item['name']?.toString() ?? '';
+    int? id = item['id'] is int ? item['id'] : int.tryParse(item['id']?.toString() ?? '');
+
+    if (isCharacter && item['actors'] is List && (item['actors'] as List).isNotEmpty) {
       var actor = item['actors'][0];
-      String actorName = actor is Map ? (actor['name'] ?? '') : actor.toString();
-      int? actorId = actor is Map ? actor['id'] : null;
+      String actorName = actor is Map ? (actor['name']?.toString() ?? '') : actor.toString();
+      int? actorId = actor is Map ? (actor['id'] is int ? actor['id'] : int.tryParse(actor['id']?.toString() ?? '')) : null;
       
       showDialog(
         context: context,
@@ -252,7 +257,7 @@ class _DetailPageState extends State<DetailPage> {
     }
 
     if (currentRate != '暂不打分') {
-      postData['rate'] = int.parse(currentRate.replaceAll('分', ''));
+      postData['rate'] = int.tryParse(currentRate.replaceAll('分', '')) ?? 0;
     }
     if (commentController.text.isNotEmpty) {
       postData['comment'] = commentController.text;
@@ -409,7 +414,7 @@ class _DetailPageState extends State<DetailPage> {
                     const SizedBox(height: 4),
                     Text(widget.subjectType == 2 ? '已出 ${detailData?['eps'] ?? '?'} 集' : '已出 ${detailData?['eps'] ?? '?'} 卷/话', style: const TextStyle(fontSize: 11, color: Colors.grey)),
                     const SizedBox(height: 8),
-                    if (detailData?['tags'] != null)
+                    if (detailData?['tags'] is List)
                       Wrap(
                         spacing: 6,
                         runSpacing: 6,
@@ -481,23 +486,25 @@ class _DetailPageState extends State<DetailPage> {
   }
 
   Widget _buildPersonCard(BuildContext context, dynamic item, bool isCharacter) {
-    String name = item['name'] ?? '';
-    String relation = item['relation'] ?? (isCharacter ? '角色' : '职位');
+    if (item is! Map) return const SizedBox.shrink();
+
+    String name = item['name']?.toString() ?? '';
+    String relation = item['relation']?.toString() ?? (isCharacter ? '角色' : '职位');
     
     String avatarUrl = '';
     
-    if (item['images'] != null) {
+    if (item['images'] is Map) {
       if (item['images']['grid'] != null) {
-        avatarUrl = item['images']['grid'];
+        avatarUrl = item['images']['grid'].toString();
       } else if (item['images']['large'] != null) {
-        avatarUrl = item['images']['large'];
+        avatarUrl = item['images']['large'].toString();
       }
     }
     
     String subTitle = relation;
-    if (isCharacter && item['actors'] != null && (item['actors'] as List).isNotEmpty) {
+    if (isCharacter && item['actors'] is List && (item['actors'] as List).isNotEmpty) {
       var actor = item['actors'][0];
-      String actorName = actor is Map ? (actor['name'] ?? '') : actor.toString();
+      String actorName = actor is Map ? (actor['name']?.toString() ?? '') : actor.toString();
       if (actorName.isNotEmpty) {
         subTitle = 'CV: $actorName';
       }
@@ -539,26 +546,31 @@ class _DetailPageState extends State<DetailPage> {
   }
 
   Widget _buildRelatedCard(BuildContext context, dynamic item) {
-    String name = item['name_cn'] ?? item['name'] ?? '';
+    if (item is! Map) return const SizedBox.shrink();
+
+    String name = item['name_cn']?.toString() ?? item['name']?.toString() ?? '';
     if (name.isEmpty) {
-      name = item['name'] ?? '';
+      name = item['name']?.toString() ?? '';
     }
-    String relation = item['relation'] ?? '关联';
+    String relation = item['relation']?.toString() ?? '关联';
     
     String imageUrl = '';
-    if (item['images'] != null && item['images']['grid'] != null) {
-      imageUrl = item['images']['grid'];
+    if (item['images'] is Map && item['images']['grid'] != null) {
+      imageUrl = item['images']['grid'].toString();
     }
 
     return InkWell(
       onTap: () {
-        Navigator.push(context, MaterialPageRoute(
-          builder: (context) => DetailPage(
-            animeId: item['id'],
-            initialName: name,
-            subjectType: item['type'] ?? 2,
-          )
-        ));
+        final itemId = item['id'] is int ? item['id'] : int.tryParse(item['id']?.toString() ?? '');
+        if (itemId != null) {
+          Navigator.push(context, MaterialPageRoute(
+            builder: (context) => DetailPage(
+              animeId: itemId,
+              initialName: name,
+              subjectType: item['type'] is int ? item['type'] : (int.tryParse(item['type']?.toString() ?? '') ?? 2),
+            )
+          ));
+        }
       },
       borderRadius: BorderRadius.circular(8),
       child: Container(
@@ -587,7 +599,7 @@ class _DetailPageState extends State<DetailPage> {
   }
 
   Widget _buildDetailsTab(ThemeData theme) {
-    String summary = detailData?['summary'] ?? '暂无简介';
+    String summary = detailData?['summary']?.toString() ?? '暂无简介';
     return SingleChildScrollView(
       padding: const EdgeInsets.only(bottom: 80),
       child: Column(
@@ -796,14 +808,14 @@ class _DetailPageState extends State<DetailPage> {
 
   @override
   Widget build(BuildContext context) {
-    String originalName = detailData?['name'] ?? widget.initialName;
-    String cnName = detailData?['name_cn'] ?? widget.initialName;
+    String originalName = detailData?['name']?.toString() ?? widget.initialName;
+    String cnName = detailData?['name_cn']?.toString() ?? widget.initialName;
     if (cnName.isEmpty) {
       cnName = originalName;
     }
 
     String imageUrl = '';
-    if (detailData?['images'] != null && detailData?['images']['large'] != null) {
+    if (detailData?['images'] is Map && detailData?['images']['large'] != null) {
       imageUrl = detailData!['images']['large'].toString();
     }
 
@@ -882,10 +894,10 @@ class _DetailPageState extends State<DetailPage> {
                   final infobox = detailData?['infobox'];
                   if (infobox is List) {
                     for (var item in infobox) {
-                      if (item['key'] == '别名') {
+                      if (item is Map && item['key'] == '别名') {
                         if (item['value'] is List) {
                           for (var v in item['value']) {
-                            if (v['v'] != null && v['v'].toString().isNotEmpty) {
+                            if (v is Map && v['v'] != null && v['v'].toString().isNotEmpty) {
                               nameList.add(v['v'].toString());
                             }
                           }

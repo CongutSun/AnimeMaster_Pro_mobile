@@ -1,6 +1,7 @@
 import 'dart:convert';
-import 'dart:io'; 
+import 'dart:io' show File; 
 import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:provider/provider.dart'; 
 import 'package:shared_preferences/shared_preferences.dart';
 import '../providers/settings_provider.dart'; 
@@ -20,7 +21,9 @@ class _HomePageState extends State<HomePage> {
   List<Anime> todayAnime = [];
   List<Anime> topAnime = [];
   List<dynamic> fullCalendar = []; 
+  
   bool isLoading = true;
+  String? errorMessage; // 新增：用于展示网络异常
   bool showTodayOnly = true;       
   String todayString = '';
 
@@ -30,8 +33,6 @@ class _HomePageState extends State<HomePage> {
     _loadData();
   }
 
-  /// 数据加载主入口
-  /// [forceRefresh] 参数用于区分是否为用户主动触发的下拉刷新操作
   Future<void> _loadData({bool forceRefresh = false}) async {
     final prefs = await SharedPreferences.getInstance();
     
@@ -41,38 +42,38 @@ class _HomePageState extends State<HomePage> {
 
     bool hasValidCache = false;
 
-    // 1. 缓存校验阶段
     if (cachedCalendar != null && cachedTop != null && cacheTimeStr != null && !forceRefresh) {
       try {
         final cacheTime = DateTime.parse(cacheTimeStr);
         final now = DateTime.now();
         
-        // 缓存有效期设定为 4 小时
         if (now.difference(cacheTime).inHours < 4) {
           final calendar = jsonDecode(cachedCalendar);
-          final rawTopData = jsonDecode(cachedTop) as List<dynamic>;
+          final rawTopData = jsonDecode(cachedTop);
           
-          _parseAndSetData(calendar, rawTopData.map((e) => e as Map<String, dynamic>).toList());
-          hasValidCache = true; 
+          // 安全的类型转换，避免由于缓存脏数据导致崩溃
+          if (calendar is List && rawTopData is List) {
+            final validTopData = rawTopData.whereType<Map>().map((e) => Map<String, dynamic>.from(e)).toList();
+            _parseAndSetData(calendar, validTopData);
+            hasValidCache = true; 
+          }
         }
       } catch (e) {
-        debugPrint('[HomePage] Cache parsing or validation failed: $e');
+        debugPrint('[HomePage] Cache parsing failed: $e');
       }
     } 
     
-    // 2. 状态分发与网络请求阶段
     if (!hasValidCache) {
-      // 场景 A：无有效缓存或用户强制刷新，需展示 Loading 指示器
-      setState(() => isLoading = true);
+      setState(() {
+        isLoading = true;
+        errorMessage = null;
+      });
       await _fetchNetworkData(prefs, isSilent: false);
     } else {
-      // 场景 B：缓存有效，界面已渲染。发起静默后台刷新，确保数据新鲜度
       _fetchNetworkData(prefs, isSilent: true);
     }
   }
 
-  /// 执行实际的 API 网络请求
-  /// [isSilent] 控制发生异常或请求过程中是否干预 UI 加载状态
   Future<void> _fetchNetworkData(SharedPreferences prefs, {bool isSilent = false}) async {
     try {
       final results = await Future.wait([
@@ -84,7 +85,6 @@ class _HomePageState extends State<HomePage> {
       final List<Map<String, dynamic>> rawTopData = results[1] as List<Map<String, dynamic>>;
 
       if (calendar.isNotEmpty && rawTopData.isNotEmpty) {
-        // 数据持久化
         await prefs.setString('cache_calendar', jsonEncode(calendar));
         await prefs.setString('cache_top', jsonEncode(rawTopData));
         await prefs.setString('cache_time', DateTime.now().toIso8601String());
@@ -96,14 +96,15 @@ class _HomePageState extends State<HomePage> {
     } catch (e) {
       debugPrint('[HomePage] Network fetch exception: $e');
       
-      // 仅在非静默模式且页面无数据时撤销 Loading 状态
       if (!isSilent && mounted && todayAnime.isEmpty) {
-        setState(() => isLoading = false);
+        setState(() {
+          isLoading = false;
+          errorMessage = '数据加载失败，请下拉重试或检查网络状态';
+        });
       }
     }
   }
 
-  /// 解析服务端数据并更新组件状态
   void _parseAndSetData(List<dynamic> calendar, List<Map<String, dynamic>> rawTopData) {
     final weekday = DateTime.now().weekday;
     final days = ["星期一", "星期二", "星期三", "星期四", "星期五", "星期六", "星期日"];
@@ -111,9 +112,9 @@ class _HomePageState extends State<HomePage> {
 
     List<Anime> parsedToday = [];
     for (var day in calendar) {
-      if (day is Map<String, dynamic> && day['weekday'] != null && day['weekday']['id'] == weekday) {
+      if (day is Map && day['weekday'] != null && day['weekday']['id'] == weekday) {
         final items = day['items'] as List<dynamic>? ?? [];
-        parsedToday = items.map((e) => Anime.fromJson(e as Map<String, dynamic>)).toList();
+        parsedToday = items.whereType<Map>().map((e) => Anime.fromJson(Map<String, dynamic>.from(e))).toList();
         break;
       }
     }
@@ -126,18 +127,18 @@ class _HomePageState extends State<HomePage> {
         todayAnime = parsedToday;
         topAnime = parsedTop;
         isLoading = false;
+        errorMessage = null;
       });
     }
   }
 
-  /// 构建整周排期视图
   Widget _buildWeekSchedule() {
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
-      children: fullCalendar.map((day) {
-        final weekdayName = day['weekday']['cn'] ?? day['weekday']['en'];
+      children: fullCalendar.whereType<Map>().map((day) {
+        final weekdayName = day['weekday']?['cn'] ?? day['weekday']?['en'] ?? '未知';
         final items = day['items'] as List<dynamic>? ?? [];
-        final dayAnime = items.map((e) => Anime.fromJson(e as Map<String, dynamic>)).toList();
+        final dayAnime = items.whereType<Map>().map((e) => Anime.fromJson(Map<String, dynamic>.from(e))).toList();
         
         return Padding(
           padding: const EdgeInsets.only(bottom: 24.0),
@@ -149,7 +150,7 @@ class _HomePageState extends State<HomePage> {
                   const Icon(Icons.live_tv, color: Colors.blueAccent, size: 20),
                   const SizedBox(width: 8),
                   Text(
-                    weekdayName, 
+                    weekdayName.toString(), 
                     style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.blueAccent)
                   ),
                 ],
@@ -163,11 +164,96 @@ class _HomePageState extends State<HomePage> {
     );
   }
 
+  Widget _buildContent() {
+    if (isLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+    
+    if (errorMessage != null) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            const Icon(Icons.error_outline, size: 48, color: Colors.redAccent),
+            const SizedBox(height: 16),
+            Text(errorMessage!, style: const TextStyle(color: Colors.grey)),
+            const SizedBox(height: 16),
+            ElevatedButton(
+              onPressed: () => _loadData(forceRefresh: true),
+              child: const Text('重新加载'),
+            )
+          ],
+        ),
+      );
+    }
+
+    return RefreshIndicator(
+      onRefresh: () => _loadData(forceRefresh: true), 
+      child: SingleChildScrollView(
+        physics: const AlwaysScrollableScrollPhysics(),
+        padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                Expanded(
+                  child: Row(
+                    children: [
+                      const Icon(Icons.calendar_month, color: Colors.blueAccent),
+                      const SizedBox(width: 8),
+                      Flexible(
+                        child: Text(
+                          showTodayOnly ? '$todayString · 今日排期' : '本周整体排期', 
+                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                TextButton.icon(
+                  onPressed: () => setState(() => showTodayOnly = !showTodayOnly),
+                  icon: Icon(showTodayOnly ? Icons.calendar_view_week : Icons.today, size: 18),
+                  label: Text(showTodayOnly ? '查看全周' : '查看今日'),
+                )
+              ],
+            ),
+            const SizedBox(height: 16),
+            
+            showTodayOnly 
+              ? AnimeGrid(animeList: todayAnime, isTop: false)
+              : _buildWeekSchedule(),
+            
+            const SizedBox(height: 32),
+            
+            Padding(
+              padding: const EdgeInsets.only(bottom: 16.0),
+              child: Row(
+                children: [
+                  const Icon(Icons.emoji_events, color: Colors.orange),
+                  const SizedBox(width: 8),
+                  const Text('本年度高分榜单', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ],
+              ),
+            ),
+            AnimeGrid(animeList: topAnime, isTop: true),
+            
+            const SizedBox(height: 40),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final provider = Provider.of<SettingsProvider>(context);
     final bgPath = provider.customBgPath;
-    final hasBg = bgPath.isNotEmpty && File(bgPath).existsSync();
+    
+    // Web 平台不支持直接使用 dart:io 访问本地文件系统，加上 kIsWeb 防护
+    final hasBg = !kIsWeb && bgPath.isNotEmpty && File(bgPath).existsSync();
     final isDarkMode = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
@@ -190,69 +276,7 @@ class _HomePageState extends State<HomePage> {
           child: Column(
             children: [
               const TopToolBar(),
-              
-              Expanded(
-                child: isLoading
-                    ? const Center(child: CircularProgressIndicator())
-                    : RefreshIndicator(
-                        onRefresh: () => _loadData(forceRefresh: true), 
-                        child: SingleChildScrollView(
-                          physics: const AlwaysScrollableScrollPhysics(),
-                          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 16.0),
-                          child: Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Row(
-                                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                                children: [
-                                  Expanded(
-                                    child: Row(
-                                      children: [
-                                        const Icon(Icons.calendar_month, color: Colors.blueAccent),
-                                        const SizedBox(width: 8),
-                                        Flexible(
-                                          child: Text(
-                                            showTodayOnly ? '$todayString · 今日排期' : '本周整体排期', 
-                                            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                                            overflow: TextOverflow.ellipsis,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  TextButton.icon(
-                                    onPressed: () => setState(() => showTodayOnly = !showTodayOnly),
-                                    icon: Icon(showTodayOnly ? Icons.calendar_view_week : Icons.today, size: 18),
-                                    label: Text(showTodayOnly ? '查看全周' : '查看今日'),
-                                  )
-                                ],
-                              ),
-                              const SizedBox(height: 16),
-                              
-                              showTodayOnly 
-                                ? AnimeGrid(animeList: todayAnime, isTop: false)
-                                : _buildWeekSchedule(),
-                              
-                              const SizedBox(height: 32),
-                              
-                              Padding(
-                                padding: const EdgeInsets.only(bottom: 16.0),
-                                child: Row(
-                                  children: [
-                                    const Icon(Icons.emoji_events, color: Colors.orange),
-                                    const SizedBox(width: 8),
-                                    const Text('本年度高分榜单', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                                  ],
-                                ),
-                              ),
-                              AnimeGrid(animeList: topAnime, isTop: true),
-                              
-                              const SizedBox(height: 40),
-                            ],
-                          ),
-                        ),
-                      ),
-              ),
+              Expanded(child: _buildContent()),
             ],
           ),
         ),

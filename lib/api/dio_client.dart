@@ -1,7 +1,18 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
-// 专业级：Dio 客户端封装
+/// 统一异常封装，方便上层业务识别具体的错误来源
+class ApiException implements Exception {
+  final int? statusCode;
+  final String message;
+  final String path;
+
+  ApiException({this.statusCode, required this.message, required this.path});
+
+  @override
+  String toString() => 'ApiException(code: $statusCode, path: $path, message: $message)';
+}
+
 class DioClient {
   static final DioClient _instance = DioClient._internal();
   factory DioClient() => _instance;
@@ -9,7 +20,8 @@ class DioClient {
   late Dio dio;
 
   static const int _timeoutSeconds = 30;
-  static const String _userAgent = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36';
+  // 建议移除写死的桌面端 UA，或者根据实际平台动态生成，这里采用通用移动端标识或留空交由底层处理
+  static const String _userAgent = 'AnimeMaster_Pro/1.0.0 (Mobile Client)';
 
   DioClient._internal() {
     dio = Dio(BaseOptions(
@@ -23,25 +35,30 @@ class DioClient {
 
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
-        // 请求拦截，可在此处注入鉴权 Token 等信息
         return handler.next(options); 
       },
       onResponse: (response, handler) {
-        // 响应拦截，可在此处统一处理 JSON 数据脱壳结构
         return handler.next(response); 
       },
       onError: (DioException e, handler) {
-        // 异常统一拦截，比如处理 401 token 过期跳转登录页
-        debugPrint('[Network Request Error] URL: ${e.requestOptions.uri} \nMessage: ${e.message}');
-        return handler.next(e); 
+        // 统一异常归一化处理
+        final apiException = ApiException(
+          statusCode: e.response?.statusCode,
+          message: e.message ?? 'Unknown Network Error',
+          path: e.requestOptions.path,
+        );
+        debugPrint('[Network Error] $apiException');
+        
+        // 将自定义异常包装在 error 字段中继续传递
+        final customError = e.copyWith(error: apiException);
+        return handler.next(customError); 
       },
     ));
 
-    // 仅在开发环境中启用详细网络日志
     if (kDebugMode) {
       dio.interceptors.add(LogInterceptor(
         request: true,          
-        requestHeader: true,    // 建议打开 Header 日志以便调试鉴权
+        requestHeader: true,    
         responseHeader: false,
         responseBody: false,    
         error: true,

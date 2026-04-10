@@ -6,7 +6,7 @@ import '../widgets/anime_grid.dart';
 class CategoryResultPage extends StatefulWidget {
   final String title;
   final String searchMode; 
-  final dynamic query; 
+  final Object query; // 修复点：移除 dynamic，明确声明类型约束
   final int searchType; 
 
   const CategoryResultPage({
@@ -62,12 +62,14 @@ class _CategoryResultPageState extends State<CategoryResultPage> {
         if (rawData.isEmpty || rawData.length < 24) hasMore = false; 
       } else if (widget.searchMode == 'character') {
         if (currentPage == 1) {
-           rawData = await BangumiApi.getCharacterSubjects(widget.query as int);
+           final qId = int.tryParse(widget.query.toString()) ?? 0;
+           rawData = await BangumiApi.getCharacterSubjects(qId);
         }
         hasMore = false; 
       } else if (widget.searchMode == 'person') {
         if (currentPage == 1) {
-           rawData = await BangumiApi.getPersonSubjects(widget.query as int);
+           final qId = int.tryParse(widget.query.toString()) ?? 0;
+           rawData = await BangumiApi.getPersonSubjects(qId);
         }
         hasMore = false;
       } else {
@@ -80,8 +82,7 @@ class _CategoryResultPageState extends State<CategoryResultPage> {
       hasMore = false;
     }
 
-    // 格式化不同接口返回的异构图片数据格式
-    List<Anime> newItems = rawData.map((e) {
+    List<Anime> newItems = rawData.whereType<Map>().map((e) {
       Map<String, dynamic> data = Map<String, dynamic>.from(e);
       if (data['image'] != null && data['images'] == null) {
           data['images'] = {'large': data['image']};
@@ -118,11 +119,11 @@ class _CategoryResultPageState extends State<CategoryResultPage> {
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Padding(
-                        padding: const EdgeInsets.only(bottom: 16.0),
+                      const Padding(
+                        padding: EdgeInsets.only(bottom: 16.0),
                         child: Text(
                           '相关的系统归档数据：',
-                          style: const TextStyle(fontSize: 14, color: Colors.grey),
+                          style: TextStyle(fontSize: 14, color: Colors.grey),
                         ),
                       ),
                       AnimeGrid(animeList: searchResults, isTop: false),
