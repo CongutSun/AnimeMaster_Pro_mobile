@@ -4,7 +4,6 @@ import 'package:provider/provider.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../providers/settings_provider.dart';
 import '../api/bangumi_api.dart';
-import '../api/dio_client.dart';
 import 'magnet_config_page.dart';
 import 'search_page.dart';
 import 'category_result_page.dart';
@@ -99,44 +98,13 @@ class _DetailPageState extends State<DetailPage> {
     final provider = Provider.of<SettingsProvider>(context, listen: false);
     final bgmUsername = provider.bgmAcc;
     final bgmToken = provider.bgmToken;
-    final dio = DioClient().dio;
-
-    Future<List<dynamic>> fetchCharacters() async {
-      try {
-        final res = await dio.get('https://api.bgm.tv/v0/subjects/${widget.animeId}/characters');
-        if (res.statusCode == 200) {
-          return res.data as List<dynamic>;
-        }
-      } catch (_) {}
-      return [];
-    }
-
-    Future<List<dynamic>> fetchPersons() async {
-      try {
-        final res = await dio.get('https://api.bgm.tv/v0/subjects/${widget.animeId}/persons');
-        if (res.statusCode == 200) {
-          return res.data as List<dynamic>;
-        }
-      } catch (_) {}
-      return [];
-    }
-
-    Future<List<dynamic>> fetchRelated() async {
-      try {
-        final res = await dio.get('https://api.bgm.tv/v0/subjects/${widget.animeId}/subjects');
-        if (res.statusCode == 200) {
-          return res.data as List<dynamic>;
-        }
-      } catch (_) {}
-      return [];
-    }
 
     final results = await Future.wait([
       BangumiApi.getAnimeDetail(widget.animeId),
       BangumiApi.getSubjectComments(widget.animeId),
-      fetchCharacters(),
-      fetchPersons(),
-      fetchRelated(),
+      BangumiApi.getSubjectCharacters(widget.animeId),
+      BangumiApi.getSubjectPersons(widget.animeId),
+      BangumiApi.getSubjectRelations(widget.animeId),
     ]);
 
     final data = results[0] as Map<String, dynamic>?;
@@ -277,12 +245,13 @@ class _DetailPageState extends State<DetailPage> {
 
     Map<String, dynamic> postData = {
       'type': statusToInt[currentStatus],
-      'ep_status': currentEp,
     };
-    
+
     if (widget.subjectType == 1) {
+      postData['ep_status'] = currentEp;
       postData['vol_status'] = currentVol;
     }
+
     if (currentRate != '暂不打分') {
       postData['rate'] = int.parse(currentRate.replaceAll('分', ''));
     }
@@ -290,7 +259,12 @@ class _DetailPageState extends State<DetailPage> {
       postData['comment'] = commentController.text;
     }
 
-    bool success = await BangumiApi.updateCollection(widget.animeId, bgmToken, postData);
+    bool collectionSuccess = await BangumiApi.updateCollection(widget.animeId, bgmToken, postData);
+    bool episodeSuccess = true;
+
+    if (collectionSuccess && widget.subjectType != 1) {
+      episodeSuccess = await BangumiApi.updateEpisodeStatus(widget.animeId, bgmToken, currentEp);
+    }
 
     if (!mounted) {
       return;
@@ -298,7 +272,7 @@ class _DetailPageState extends State<DetailPage> {
 
     setState(() => isSyncing = false);
     
-    if (success) {
+    if (collectionSuccess && episodeSuccess) {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('云端同步成功'), backgroundColor: Colors.green));
     } else {
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('同步失败，请检查 Token 或网络'), backgroundColor: Colors.red));
@@ -382,7 +356,8 @@ class _DetailPageState extends State<DetailPage> {
     );
   }
 
-  Widget _buildTopHeader(String imageUrl, String cnName, String originalName, ThemeData theme, Color highlightOrange) {
+  // 修复：传入 highlightBlue，让标签颜色在深色模式下自动适配为高亮浅蓝，解决显示不清的问题
+  Widget _buildTopHeader(String imageUrl, String cnName, String originalName, ThemeData theme, Color highlightOrange, Color highlightBlue) {
     return Stack(
       children: [
         if (imageUrl.isNotEmpty)
@@ -457,11 +432,12 @@ class _DetailPageState extends State<DetailPage> {
                             child: Container(
                               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                               decoration: BoxDecoration(
-                                color: theme.primaryColor.withValues(alpha: 0.1),
+                                // 使用 highlightBlue 替代 theme.primaryColor，增强深色模式下的对比度
+                                color: highlightBlue.withValues(alpha: 0.15),
                                 borderRadius: BorderRadius.circular(4),
-                                border: Border.all(color: theme.primaryColor.withValues(alpha: 0.2)),
+                                border: Border.all(color: highlightBlue.withValues(alpha: 0.3)),
                               ),
-                              child: Text(tagName, style: TextStyle(fontSize: 10, color: theme.primaryColor)),
+                              child: Text(tagName, style: TextStyle(fontSize: 10, color: highlightBlue)),
                             ),
                           );
                         }).toList(),
@@ -476,7 +452,6 @@ class _DetailPageState extends State<DetailPage> {
     );
   }
 
-  // 修复：新增 listHeight 参数并将其应用到 SizedBox 高度上
   Widget _buildCompactHorizontalList({
     required BuildContext context,
     required String title,
@@ -659,7 +634,6 @@ class _DetailPageState extends State<DetailPage> {
             items: staffData,
             itemBuilder: (ctx, item) => _buildPersonCard(ctx, item, false),
           ),
-          // 修复：单独为关联条目指派了 130 的高度，完美容纳图片和双行文字
           _buildCompactHorizontalList(
             context: context,
             title: '关联条目',
@@ -864,7 +838,8 @@ class _DetailPageState extends State<DetailPage> {
                   headerSliverBuilder: (context, innerBoxIsScrolled) {
                     return [
                       SliverToBoxAdapter(
-                        child: _buildTopHeader(imageUrl, cnName, originalName, theme, highlightOrange),
+                        // 传入 highlightBlue，让标签在深色和浅色模式下都能自适应高亮
+                        child: _buildTopHeader(imageUrl, cnName, originalName, theme, highlightOrange, highlightBlue),
                       ),
                       SliverPersistentHeader(
                         pinned: true,
