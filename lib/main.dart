@@ -1,34 +1,45 @@
-import 'dart:io'; // ✨ 引入 io 库以接管全局 HTTP
-import 'dart:ui'; 
+import 'dart:io';
+import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
 import 'providers/settings_provider.dart';
 import 'screens/home_page.dart';
 
-class MyHttpOverrides extends HttpOverrides {
+// 专业级：收拢 SSL 绕过策略，仅对特定图床域名放行，防止 App 遭受中间人攻击
+class AppHttpOverrides extends HttpOverrides {
   @override
   HttpClient createHttpClient(SecurityContext? context) {
-    return super.createHttpClient(context)
-      // 解决某些自签证书导致的 HTTPS 报错问题
-      ..badCertificateCallback = (X509Certificate cert, String host, int port) => true;
+    final client = super.createHttpClient(context);
+    client.badCertificateCallback = (X509Certificate cert, String host, int port) {
+      // 仅允许我们已知的、证书可能存在问题的图床域名绕过校验
+      final allowedHosts = ['bgm.tv', 'chii.in', 'lain.bgm.tv'];
+      if (allowedHosts.any((allowed) => host.contains(allowed))) {
+        return true;
+      }
+      return false; // 商业项目中，未知域名必须进行严格的证书校验
+    };
+    return client;
   }
 }
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
 
-  // 强制忽略证书错误，并准备在具体的图片库里配置 UA
-  HttpOverrides.global = MyHttpOverrides();
+  // 注入受控的 HTTP 全局配置
+  HttpOverrides.global = AppHttpOverrides();
 
+  // 专业级：Flutter 框架层面的异常捕获
   FlutterError.onError = (FlutterErrorDetails details) {
-    debugPrint('【Flutter 全局异常拦截】: ${details.exceptionAsString()}');
+    // 未来可替换为 Firebase Crashlytics 或 Sentry 上报逻辑
+    debugPrint('[Flutter Framework Error]: ${details.exceptionAsString()}');
     FlutterError.presentError(details);
   };
 
+  // 专业级：Dart 异步任务异常捕获
   PlatformDispatcher.instance.onError = (error, stack) {
-    debugPrint('【Dart 异步异常拦截】: $error\n堆栈: $stack');
-    return true;
+    debugPrint('[Dart Async Error]: $error\nStack: $stack');
+    return true; // 阻止应用崩溃退出
   };
 
   runApp(
@@ -36,13 +47,13 @@ void main() async {
       providers: [
         ChangeNotifierProvider(create: (_) => SettingsProvider()),
       ],
-      child: const MyApp(),
+      child: const AnimeApp(),
     ),
   );
 }
 
-class MyApp extends StatelessWidget {
-  const MyApp({super.key});
+class AnimeApp extends StatelessWidget {
+  const AnimeApp({super.key});
 
   @override
   Widget build(BuildContext context) {
@@ -53,12 +64,11 @@ class MyApp extends StatelessWidget {
         return MaterialApp(
           title: '智能追番助手',
           debugShowCheckedModeBanner: false, 
-          
           themeMode: isDarkMode ? ThemeMode.dark : ThemeMode.light,
           
           theme: ThemeData(
             brightness: Brightness.light,
-            primarySwatch: Colors.blue,
+            primaryColor: Colors.blue,
             scaffoldBackgroundColor: Colors.grey.shade50,
             appBarTheme: const AppBarTheme(
               backgroundColor: Colors.white,
@@ -78,6 +88,7 @@ class MyApp extends StatelessWidget {
           ),
           
           builder: (context, child) {
+            // 锁定字体大小，防止用户系统字体设置导致 UI 错位
             return MediaQuery(
               data: MediaQuery.of(context).copyWith(
                 textScaler: TextScaler.noScaling, 
@@ -93,7 +104,6 @@ class MyApp extends StatelessWidget {
   }
 }
 
-// ... 下面的 UpdateCheckWrapper 和 _UpdateCheckWrapperState 保持你原本的代码不变 ...
 class UpdateCheckWrapper extends StatefulWidget {
   final Widget child; 
   
@@ -121,7 +131,7 @@ class _UpdateCheckWrapperState extends State<UpdateCheckWrapper> {
         _showUpdateDialog();
       }
     } catch (e) {
-      debugPrint("检查更新失败: $e");
+      debugPrint('[Update Checker Error]: $e');
     }
   }
 
@@ -152,7 +162,7 @@ class _UpdateCheckWrapperState extends State<UpdateCheckWrapper> {
                   Navigator.of(context).pop();
                   _showRestartDialog();
                 } catch (e) {
-                  debugPrint("更新出错: $e");
+                  debugPrint('[Update Process Error]: $e');
                   if (!mounted) return;
                   Navigator.of(context).pop();
                 }
@@ -174,7 +184,7 @@ class _UpdateCheckWrapperState extends State<UpdateCheckWrapper> {
             children: [
               CircularProgressIndicator(),
               SizedBox(width: 20),
-              Text("正在下载更新，请稍候..."),
+              Text('正在下载更新，请稍候...'),
             ],
           ),
         );

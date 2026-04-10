@@ -32,7 +32,6 @@ dependencies:
     sdk: flutter
 
   # The following adds the Cupertino Icons font to your application.
-  # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
   http: ^1.6.0
   html: ^0.15.6
@@ -46,8 +45,9 @@ dependencies:
   package_info_plus: ^9.0.1
   shorebird_code_push: ^2.0.5
   cached_network_image: ^3.4.1
-  # 新增的依赖：用于安全存储，解决代码中引用的问题
   flutter_secure_storage: ^10.0.0
+  # 新增依赖：用于接管底层图片下载与缓存队列，解决并发与 Release 环境异常
+  flutter_cache_manager: ^3.3.2
 
 dev_dependencies:
   flutter_test:

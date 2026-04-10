@@ -1,6 +1,7 @@
 import 'package:dio/dio.dart';
 import 'package:flutter/foundation.dart';
 
+// 专业级：Dio 客户端封装
 class DioClient {
   static final DioClient _instance = DioClient._internal();
   factory DioClient() => _instance;
@@ -22,27 +23,27 @@ class DioClient {
 
     dio.interceptors.add(InterceptorsWrapper(
       onRequest: (options, handler) {
-        // 可以在这里统一注入 Token： options.headers['Authorization'] = 'Bearer XXX';
+        // 请求拦截，可在此处注入鉴权 Token 等信息
         return handler.next(options); 
       },
       onResponse: (response, handler) {
-        // 可以在这里进行全局的数据脱壳处理
+        // 响应拦截，可在此处统一处理 JSON 数据脱壳结构
         return handler.next(response); 
       },
       onError: (DioException e, handler) {
-        // 可以在这里统一处理 401 登录过期、网络无连接等通用业务错误
-        debugPrint('【网络请求异常】 URL: ${e.requestOptions.uri} \nMessage: ${e.message}');
+        // 异常统一拦截，比如处理 401 token 过期跳转登录页
+        debugPrint('[Network Request Error] URL: ${e.requestOptions.uri} \nMessage: ${e.message}');
         return handler.next(e); 
       },
     ));
 
-    // 开发环境开启详细日志
+    // 仅在开发环境中启用详细网络日志
     if (kDebugMode) {
       dio.interceptors.add(LogInterceptor(
-        request: true,          // 建议开发期看完整的请求路径
-        requestHeader: false,
+        request: true,          
+        requestHeader: true,    // 建议打开 Header 日志以便调试鉴权
         responseHeader: false,
-        responseBody: false,    // 视数据量大小可设为 true
+        responseBody: false,    
         error: true,
       ));
     }
