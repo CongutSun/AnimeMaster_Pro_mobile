@@ -1,17 +1,14 @@
 import 'package:flutter/material.dart';
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
+import '../models/playable_media.dart'; // 引入新架构的模型
 
 class VideoPlayerPage extends StatefulWidget {
-  final String videoUrl;
-  final String title;
-  final Map<String, String>? httpHeaders; // 新增：接收网络请求头
+  final PlayableMedia media; // 核心改变：统一接收 PlayableMedia 对象
 
   const VideoPlayerPage({
     super.key, 
-    required this.videoUrl, 
-    required this.title,
-    this.httpHeaders,
+    required this.media,
   });
 
   @override
@@ -28,10 +25,10 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
     player = Player();
     controller = VideoController(player);
 
-    // 修复 Bug：将授权 Header 显式传入播放器引擎
+    // 从统一的 media 对象中提取数据播放
     player.open(Media(
-      widget.videoUrl,
-      httpHeaders: widget.httpHeaders,
+      widget.media.url,
+      httpHeaders: widget.media.headers,
     ));
   }
 
@@ -50,10 +47,22 @@ class _VideoPlayerPageState extends State<VideoPlayerPage> {
         backgroundColor: Colors.transparent,
         elevation: 0,
         iconTheme: const IconThemeData(color: Colors.white),
-        title: Text(
-          widget.title, 
-          style: const TextStyle(color: Colors.white, fontSize: 14),
-          overflow: TextOverflow.ellipsis,
+        title: Row(
+          children: [
+            // 如果是本地缓存视频，显示一个小图标提示
+            if (widget.media.isLocal) 
+              const Padding(
+                padding: EdgeInsets.only(right: 8.0),
+                child: Icon(Icons.offline_pin, color: Colors.green, size: 16),
+              ),
+            Expanded(
+              child: Text(
+                widget.media.title, 
+                style: const TextStyle(color: Colors.white, fontSize: 14),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
         ),
       ),
       body: Center(

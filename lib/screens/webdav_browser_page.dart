@@ -2,7 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:webdav_client/webdav_client.dart' as webdav;
 import '../api/webdav_api.dart';
+import '../resolvers/webdav_resolver.dart';
+import '../utils/media_cache_manager.dart'; // 引入缓存管理器
 import 'video_player_page.dart';
+import 'local_cache_page.dart'; // 引入缓存中心页面
 
 class WebdavBrowserPage extends StatefulWidget {
   final String animeName;
@@ -128,7 +131,6 @@ class _WebdavBrowserPageState extends State<WebdavBrowserPage> {
   bool _isVideo(String? name) {
     if (name == null) return false;
     final lower = name.toLowerCase();
-    // 动漫常见的格式全部支持
     return lower.endsWith('.mp4') || lower.endsWith('.mkv') || lower.endsWith('.avi') || lower.endsWith('.rmvb') || lower.endsWith('.flv');
   }
 
@@ -153,6 +155,12 @@ class _WebdavBrowserPageState extends State<WebdavBrowserPage> {
             onPressed: _goBack,
           ),
           actions: [
+            // 新增：查看离线缓存页面的快捷入口
+            IconButton(
+              icon: const Icon(Icons.download_done, color: Colors.blueAccent),
+              tooltip: '查看离线缓存',
+              onPressed: () => Navigator.push(context, MaterialPageRoute(builder: (_) => const LocalCachePage())),
+            ),
             IconButton(
               icon: const Icon(Icons.settings),
               tooltip: '修改 WebDAV 配置',
@@ -179,23 +187,50 @@ class _WebdavBrowserPageState extends State<WebdavBrowserPage> {
                     ),
                     title: Text(fileName ?? '未知', maxLines: 2, overflow: TextOverflow.ellipsis, style: const TextStyle(fontSize: 14)),
                     subtitle: isDir ? null : Text(file.mTime?.toString() ?? '', style: const TextStyle(fontSize: 10)),
-                    onTap: () {
-                      if (isDir) {
-                        _loadDirectory(file.path?.toString() ?? '/');
-                      } else if (isVideo) {
-                        // 修复点：获取干净的流地址，并获取鉴权 Headers 传给播放器
+                    
+                    // 新增：视频文件专属的尾部“下载按钮”
+                    trailing: isVideo ? IconButton(
+                      icon: const Icon(Icons.file_download, color: Colors.blue),
+                      onPressed: () {
+                        // 构建下载所需的底层参数
                         final streamUrl = WebDavApi().getStreamUrl(file.path?.toString() ?? '');
                         final headers = WebDavApi().getAuthHeaders();
                         
-                        debugPrint('准备播放直链: $streamUrl'); // 可以在后台帮你排查
-                        
-                        Navigator.push(context, MaterialPageRoute(
-                          builder: (context) => VideoPlayerPage(
-                            videoUrl: streamUrl,
-                            title: fileName ?? '正在播放',
-                            httpHeaders: headers, // 把账号密码和浏览器标识传过去
-                          ),
-                        ));
+                        // 丢给 Manager 在后台静默下载
+                        MediaCacheManager().startDownload(
+                          id: file.path?.toString() ?? '',
+                          title: fileName ?? '未知视频',
+                          url: streamUrl,
+                          headers: headers,
+                        );
+
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          SnackBar(content: Text('已加入离线缓存队列: $fileName'))
+                        );
+                      },
+                    ) : null,
+
+                    onTap: () async {
+                      if (isDir) {
+                        _loadDirectory(file.path?.toString() ?? '/');
+                      } else if (isVideo) {
+                        final resolver = WebDavResolver();
+                        final sourceData = {
+                          'webdav_path': file.path?.toString() ?? '',
+                          'title': fileName ?? '正在播放',
+                        };
+
+                        try {
+                          final playableMedia = await resolver.resolve(sourceData);
+                          if (!context.mounted) return;
+                          Navigator.push(context, MaterialPageRoute(
+                            builder: (context) => VideoPlayerPage(media: playableMedia),
+                          ));
+                        } catch (e) {
+                          ScaffoldMessenger.of(context).showSnackBar(
+                            SnackBar(content: Text('解析播放地址失败: $e'))
+                          );
+                        }
                       } else {
                         ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('非支持的视频格式')));
                       }
