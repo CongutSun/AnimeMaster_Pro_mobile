@@ -8,6 +8,7 @@ import 'magnet_config_page.dart';
 import 'search_page.dart';
 import 'category_result_page.dart';
 import '../utils/image_request.dart';
+import 'webdav_browser_page.dart'; // 新增：引入网盘串流页面
 
 Widget _buildSafeImage({
   required String imageUrl,
@@ -104,7 +105,6 @@ class _DetailPageState extends State<DetailPage> {
       BangumiApi.getSubjectRelations(widget.animeId),
     ]);
 
-    // 修复点：安全的类型判断及回退值处理
     final data = results[0] is Map ? Map<String, dynamic>.from(results[0] as Map) : null;
     
     final comments = results[1] is List 
@@ -876,50 +876,74 @@ class _DetailPageState extends State<DetailPage> {
                   ),
                 ),
           floatingActionButtonLocation: FloatingActionButtonLocation.centerDocked,
+          // 核心修改：将原来的单按钮改为左右对称的双按钮布局
           floatingActionButton: widget.subjectType == 1 ? null : Padding(
             padding: const EdgeInsets.all(16.0),
-            child: SizedBox(
-              width: double.infinity,
-              height: 48,
-              child: ElevatedButton.icon(
-                onPressed: () {
-                  List<String> nameList = [];
-                  if (cnName.isNotEmpty) {
-                    nameList.add(cnName);
-                  }
-                  if (originalName.isNotEmpty && originalName != cnName) {
-                    nameList.add(originalName);
-                  }
+            child: Row(
+              children: [
+                Expanded(
+                  child: SizedBox(
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                        List<String> nameList = [];
+                        if (cnName.isNotEmpty) {
+                          nameList.add(cnName);
+                        }
+                        if (originalName.isNotEmpty && originalName != cnName) {
+                          nameList.add(originalName);
+                        }
 
-                  final infobox = detailData?['infobox'];
-                  if (infobox is List) {
-                    for (var item in infobox) {
-                      if (item is Map && item['key'] == '别名') {
-                        if (item['value'] is List) {
-                          for (var v in item['value']) {
-                            if (v is Map && v['v'] != null && v['v'].toString().isNotEmpty) {
-                              nameList.add(v['v'].toString());
+                        final infobox = detailData?['infobox'];
+                        if (infobox is List) {
+                          for (var item in infobox) {
+                            if (item is Map && item['key'] == '别名') {
+                              if (item['value'] is List) {
+                                for (var v in item['value']) {
+                                  if (v is Map && v['v'] != null && v['v'].toString().isNotEmpty) {
+                                    nameList.add(v['v'].toString());
+                                  }
+                                }
+                              } else if (item['value'] is String) {
+                                if (item['value'].toString().isNotEmpty) {
+                                  nameList.add(item['value'].toString());
+                                }
+                              }
                             }
                           }
-                        } else if (item['value'] is String) {
-                          if (item['value'].toString().isNotEmpty) {
-                            nameList.add(item['value'].toString());
-                          }
                         }
-                      }
-                    }
-                  }
-                  nameList = nameList.toSet().toList();
+                        nameList = nameList.toSet().toList();
 
-                  Navigator.push(context, MaterialPageRoute(builder: (context) => MagnetConfigPage(
-                    animeName: cnName,
-                    aliases: nameList,
-                  )));
-                },
-                icon: const Icon(Icons.rocket_launch, color: Colors.white),
-                label: const Text('去搜刮下载', style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
-                style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
-              ),
+                        Navigator.push(context, MaterialPageRoute(builder: (context) => MagnetConfigPage(
+                          animeName: cnName,
+                          aliases: nameList,
+                        )));
+                      },
+                      icon: const Icon(Icons.rocket_launch, color: Colors.white, size: 20),
+                      label: const Text('搜刮下载', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.blueAccent, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                    ),
+                  ),
+                ),
+                
+                const SizedBox(width: 12),
+                
+                Expanded(
+                  child: SizedBox(
+                    height: 48,
+                    child: ElevatedButton.icon(
+                      onPressed: () {
+                         Navigator.push(context, MaterialPageRoute(
+                           builder: (context) => WebdavBrowserPage(animeName: cnName)
+                         ));
+                      },
+                      icon: const Icon(Icons.cloud_circle, color: Colors.white, size: 22),
+                      label: const Text('网盘串流', style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.white)),
+                      style: ElevatedButton.styleFrom(backgroundColor: Colors.green.shade600, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8))),
+                    ),
+                  ),
+                ),
+              ],
             ),
           ),
         ),

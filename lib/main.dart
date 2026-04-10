@@ -3,6 +3,7 @@ import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:shorebird_code_push/shorebird_code_push.dart';
+import 'package:media_kit/media_kit.dart'; // 新增：引入 media_kit
 import 'providers/settings_provider.dart';
 import 'screens/home_page.dart';
 
@@ -17,6 +18,9 @@ class MyHttpOverrides extends HttpOverrides {
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+  
+  // 新增：初始化强大的视频引擎底层
+  MediaKit.ensureInitialized(); 
 
   // 强制忽略证书错误，并准备在具体的图片库里配置 UA
   HttpOverrides.global = MyHttpOverrides();
